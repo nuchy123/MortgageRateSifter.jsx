@@ -1,0 +1,975 @@
+import React, { useState, useMemo } from 'react';
+
+const MortgageRateSifter = () => {
+  const [filters, setFilters] = useState({
+    productType: 'all',
+    loanType: 'all',
+    lockPeriod: '30',
+    minRate: '',
+    maxRate: '',
+    searchTerm: '',
+    fico: '',
+    ltv: '',
+    loanAmount: '',
+    purchasePrice: '',
+    occupancy: 'all',
+    propertyType: 'singlefamily',
+    loanPurpose: 'all',
+    escrowWaiver: false,
+    zipCode: '',
+    state: '',
+    city: '',
+    county: ''
+  });
+
+  const [brokerComp, setBrokerComp] = useState(2.5);
+  const [zipLoading, setZipLoading] = useState(false);
+  const [zipError, setZipError] = useState('');
+
+  // Pay-up Incentives for Conventional 30yr (from TPO Go Sheet 2)
+  // These are ADDED to the base price at higher rates
+  
+  // NY Primary Residence Pay-ups (verified against TPO Go)
+  const nyPrimaryPayups = {
+    5.0: 0.000, 5.125: 0.000, 5.25: 0.096, 5.375: 0.096, 5.49: 0.096,
+    5.5: 0.095, 5.625: 0.095, 5.75: 0.534, 5.875: 0.595, 5.99: 0.595,
+    6.0: 0.696, 6.125: 0.715, 6.25: 1.243, 6.375: 1.257, 6.49: 1.257,
+    6.5: 1.416, 6.625: 1.527, 6.75: 2.356, 6.875: 2.396, 6.99: 2.396,
+    7.0: 2.311, 7.125: 2.311, 7.25: 1.926, 7.375: 1.927, 7.49: 1.927,
+  };
+
+  // NY Investment Pay-ups (from Sheet 2 - similar pattern to NY Primary)
+  const nyInvestmentPayups = {
+    5.0: 0.000, 5.125: 0.000, 5.25: 0.096, 5.375: 0.096, 5.49: 0.096,
+    5.5: 0.095, 5.625: 0.095, 5.75: 0.534, 5.875: 0.595, 5.99: 0.595,
+    6.0: 0.696, 6.125: 0.715, 6.25: 1.243, 6.375: 1.257, 6.49: 1.257,
+    6.5: 1.416, 6.625: 1.527, 6.75: 2.356, 6.875: 2.396, 6.99: 2.396,
+    7.0: 2.311, 7.125: 2.311, 7.25: 1.926, 7.375: 1.927, 7.49: 1.927,
+  };
+
+  // NY Second Home Pay-ups (from Sheet 2 - similar pattern to NY Primary)
+  const nySecondHomePayups = {
+    5.0: 0.000, 5.125: 0.000, 5.25: 0.096, 5.375: 0.096, 5.49: 0.096,
+    5.5: 0.095, 5.625: 0.095, 5.75: 0.534, 5.875: 0.595, 5.99: 0.595,
+    6.0: 0.696, 6.125: 0.715, 6.25: 1.243, 6.375: 1.257, 6.49: 1.257,
+    6.5: 1.416, 6.625: 1.527, 6.75: 2.356, 6.875: 2.396, 6.99: 2.396,
+    7.0: 2.311, 7.125: 2.311, 7.25: 1.926, 7.375: 1.927, 7.49: 1.927,
+  };
+
+  // Investment (Non-NY, Non-FL) Pay-ups - No pay-ups per Sheet 2
+  const investmentOtherPayups = {
+    5.0: 0, 5.125: 0, 5.25: 0, 5.375: 0, 5.49: 0, 5.5: 0, 5.625: 0, 5.75: 0,
+    5.875: 0, 5.99: 0, 6.0: 0, 6.125: 0, 6.25: 0, 6.375: 0, 6.49: 0, 6.5: 0,
+    6.625: 0, 6.75: 0, 6.875: 0, 6.99: 0, 7.0: 0, 7.125: 0, 7.25: 0, 7.375: 0, 7.49: 0,
+  };
+
+  // Second Home (Non-NY, Non-FL) Pay-ups - No pay-ups per Sheet 2
+  const secondHomeOtherPayups = {
+    5.0: 0, 5.125: 0, 5.25: 0, 5.375: 0, 5.49: 0, 5.5: 0, 5.625: 0, 5.75: 0,
+    5.875: 0, 5.99: 0, 6.0: 0, 6.125: 0, 6.25: 0, 6.375: 0, 6.49: 0, 6.5: 0,
+    6.625: 0, 6.75: 0, 6.875: 0, 6.99: 0, 7.0: 0, 7.125: 0, 7.25: 0, 7.375: 0, 7.49: 0,
+  };
+
+  // FL follows same rules as "Other" states (no special pay-ups)
+  // Primary Residence (Non-NY) - No special pay-ups
+  const primaryOtherPayups = {
+    5.0: 0, 5.125: 0, 5.25: 0, 5.375: 0, 5.49: 0, 5.5: 0, 5.625: 0, 5.75: 0,
+    5.875: 0, 5.99: 0, 6.0: 0, 6.125: 0, 6.25: 0, 6.375: 0, 6.49: 0, 6.5: 0,
+    6.625: 0, 6.75: 0, 6.875: 0, 6.99: 0, 7.0: 0, 7.125: 0, 7.25: 0, 7.375: 0, 7.49: 0,
+  };
+
+  // Get pay-up for a given rate based on state and occupancy
+  const getPayup = (rate, state, occupancy, product, term) => {
+    // Pay-ups only apply to Conventional 30yr
+    if (product !== 'Conventional') return 0;
+    if (!term.includes('30')) return 0;
+    
+    // Select the appropriate pay-up table
+    let payupTable;
+    
+    if (state === 'NY') {
+      if (occupancy === 'investment') {
+        payupTable = nyInvestmentPayups;
+      } else if (occupancy === 'second') {
+        payupTable = nySecondHomePayups;
+      } else {
+        payupTable = nyPrimaryPayups;
+      }
+    } else {
+      // Non-NY states (including FL which has no special pay-ups)
+      if (occupancy === 'investment') {
+        payupTable = investmentOtherPayups;
+      } else if (occupancy === 'second') {
+        payupTable = secondHomeOtherPayups;
+      } else {
+        payupTable = primaryOtherPayups;
+      }
+    }
+    
+    // Find closest rate in pay-up table
+    const rates = Object.keys(payupTable).map(Number).sort((a, b) => a - b);
+    let closest = rates[0];
+    for (const r of rates) {
+      if (Math.abs(r - rate) < Math.abs(closest - rate)) {
+        closest = r;
+      }
+    }
+    return payupTable[closest] || 0;
+  };
+
+  // Built-in ZIP code database for common areas
+  const zipDatabase = {
+    '10952': { state: 'NY', city: 'Monsey' },
+    '10977': { state: 'NY', city: 'Spring Valley' },
+    '10901': { state: 'NY', city: 'Suffern' },
+    '10956': { state: 'NY', city: 'New City' },
+    '10960': { state: 'NY', city: 'Nyack' },
+    '10994': { state: 'NY', city: 'West Nyack' },
+    '10913': { state: 'NY', city: 'Blauvelt' },
+    '10920': { state: 'NY', city: 'Congers' },
+    '10954': { state: 'NY', city: 'Nanuet' },
+    '10989': { state: 'NY', city: 'Valley Cottage' },
+    '10001': { state: 'NY', city: 'New York' },
+    '10002': { state: 'NY', city: 'New York' },
+    '10003': { state: 'NY', city: 'New York' },
+    '11201': { state: 'NY', city: 'Brooklyn' },
+    '11101': { state: 'NY', city: 'Queens' },
+    '10451': { state: 'NY', city: 'Bronx' },
+    '90001': { state: 'CA', city: 'Los Angeles' },
+    '90210': { state: 'CA', city: 'Beverly Hills' },
+    '94102': { state: 'CA', city: 'San Francisco' },
+    '60601': { state: 'IL', city: 'Chicago' },
+    '75201': { state: 'TX', city: 'Dallas' },
+    '77001': { state: 'TX', city: 'Houston' },
+    '33101': { state: 'FL', city: 'Miami' },
+    '30301': { state: 'GA', city: 'Atlanta' },
+    '02101': { state: 'MA', city: 'Boston' },
+    '19101': { state: 'PA', city: 'Philadelphia' },
+    '85001': { state: 'AZ', city: 'Phoenix' },
+    '98101': { state: 'WA', city: 'Seattle' },
+    '80201': { state: 'CO', city: 'Denver' },
+    '07601': { state: 'NJ', city: 'Hackensack' },
+    '08701': { state: 'NJ', city: 'Lakewood' },
+    '07302': { state: 'NJ', city: 'Jersey City' },
+  };
+
+  const rateData = [
+    { product: 'FHA', term: '30 Year Fixed', rate: 4.5, lock15: 95.938, lock30: 95.813, lock45: 95.688, lock60: 95.563 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 4.625, lock15: 96.486, lock30: 96.361, lock45: 96.236, lock60: 96.111 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 4.75, lock15: 97.406, lock30: 97.281, lock45: 97.156, lock60: 97.031 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 4.875, lock15: 98.22, lock30: 98.095, lock45: 97.97, lock60: 97.845 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 5.0, lock15: 98.742, lock30: 98.617, lock45: 98.492, lock60: 98.367 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 5.125, lock15: 99.249, lock30: 99.124, lock45: 98.999, lock60: 98.874 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 5.25, lock15: 99.896, lock30: 99.771, lock45: 99.646, lock60: 99.521 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 5.5, lock15: 100.976, lock30: 100.851, lock45: 100.726, lock60: 100.601 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 5.625, lock15: 101.459, lock30: 101.334, lock45: 101.209, lock60: 101.084 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 5.75, lock15: 101.791, lock30: 101.666, lock45: 101.541, lock60: 101.416 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 6.0, lock15: 102.128, lock30: 102.003, lock45: 101.878, lock60: 101.753 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 6.125, lock15: 102.621, lock30: 102.496, lock45: 102.371, lock60: 102.246 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 6.25, lock15: 102.636, lock30: 102.511, lock45: 102.386, lock60: 102.261 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 6.5, lock15: 103.031, lock30: 102.906, lock45: 102.781, lock60: 102.656 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 6.625, lock15: 103.502, lock30: 103.377, lock45: 103.252, lock60: 103.127 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 6.75, lock15: 103.593, lock30: 103.468, lock45: 103.343, lock60: 103.218 },
+    { product: 'FHA', term: '30 Year Fixed', rate: 7.0, lock15: 104.34, lock30: 104.215, lock45: 104.09, lock60: 103.965 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 4.25, lock15: 97.907, lock30: 97.782, lock45: 97.657, lock60: 97.532 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 4.5, lock15: 98.809, lock30: 98.684, lock45: 98.559, lock60: 98.434 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 4.75, lock15: 99.575, lock30: 99.45, lock45: 99.325, lock60: 99.2 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 5.0, lock15: 100.287, lock30: 100.162, lock45: 100.037, lock60: 99.912 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 5.5, lock15: 101.548, lock30: 101.423, lock45: 101.298, lock60: 101.173 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 5.75, lock15: 102.548, lock30: 102.423, lock45: 102.298, lock60: 102.173 },
+    { product: 'FHA', term: '15 Year Fixed', rate: 6.0, lock15: 102.669, lock30: 102.544, lock45: 102.419, lock60: 102.294 },
+    { product: 'VA', term: '30 Year Fixed', rate: 4.5, lock15: 95.788, lock30: 95.663, lock45: 95.538, lock60: 95.413 },
+    { product: 'VA', term: '30 Year Fixed', rate: 4.625, lock15: 96.336, lock30: 96.211, lock45: 96.086, lock60: 95.961 },
+    { product: 'VA', term: '30 Year Fixed', rate: 4.75, lock15: 97.356, lock30: 97.231, lock45: 97.106, lock60: 96.981 },
+    { product: 'VA', term: '30 Year Fixed', rate: 5.0, lock15: 98.592, lock30: 98.467, lock45: 98.342, lock60: 98.217 },
+    { product: 'VA', term: '30 Year Fixed', rate: 5.125, lock15: 99.099, lock30: 98.974, lock45: 98.849, lock60: 98.724 },
+    { product: 'VA', term: '30 Year Fixed', rate: 5.25, lock15: 99.846, lock30: 99.721, lock45: 99.596, lock60: 99.471 },
+    { product: 'VA', term: '30 Year Fixed', rate: 5.5, lock15: 100.826, lock30: 100.701, lock45: 100.576, lock60: 100.451 },
+    { product: 'VA', term: '30 Year Fixed', rate: 5.625, lock15: 101.309, lock30: 101.184, lock45: 101.059, lock60: 100.934 },
+    { product: 'VA', term: '30 Year Fixed', rate: 5.75, lock15: 101.741, lock30: 101.616, lock45: 101.491, lock60: 101.366 },
+    { product: 'VA', term: '30 Year Fixed', rate: 6.0, lock15: 101.978, lock30: 101.853, lock45: 101.728, lock60: 101.603 },
+    { product: 'VA', term: '30 Year Fixed', rate: 6.125, lock15: 102.471, lock30: 102.346, lock45: 102.221, lock60: 102.096 },
+    { product: 'VA', term: '30 Year Fixed', rate: 6.25, lock15: 102.586, lock30: 102.461, lock45: 102.336, lock60: 102.211 },
+    { product: 'VA', term: '15 Year Fixed', rate: 4.5, lock15: 98.559, lock30: 98.434, lock45: 98.309, lock60: 98.184 },
+    { product: 'VA', term: '15 Year Fixed', rate: 4.75, lock15: 99.325, lock30: 99.2, lock45: 99.075, lock60: 98.95 },
+    { product: 'VA', term: '15 Year Fixed', rate: 5.0, lock15: 99.974, lock30: 99.849, lock45: 99.724, lock60: 99.599 },
+    { product: 'VA', term: '15 Year Fixed', rate: 5.25, lock15: 100.967, lock30: 100.842, lock45: 100.717, lock60: 100.592 },
+    { product: 'VA', term: '15 Year Fixed', rate: 5.5, lock15: 101.198, lock30: 101.073, lock45: 100.948, lock60: 100.823 },
+    { product: 'VA', term: '15 Year Fixed', rate: 5.75, lock15: 102.298, lock30: 102.173, lock45: 102.048, lock60: 101.923 },
+    { product: 'VA', term: '15 Year Fixed', rate: 6.0, lock15: 102.319, lock30: 102.194, lock45: 102.069, lock60: 101.944 },
+    { product: 'VA', term: '15 Year Fixed', rate: 6.25, lock15: 103.155, lock30: 103.03, lock45: 102.905, lock60: 102.78 },
+    { product: 'VA', term: '15 Year Fixed', rate: 6.75, lock15: 105.12, lock30: 104.995, lock45: 104.87, lock60: 104.745 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 5.0, lock15: 98.642, lock30: 98.517, lock45: 98.392, lock60: 98.267 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 5.25, lock15: 99.896, lock30: 99.771, lock45: 99.646, lock60: 99.521 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 5.5, lock15: 100.876, lock30: 100.751, lock45: 100.626, lock60: 100.501 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 5.75, lock15: 101.791, lock30: 101.666, lock45: 101.541, lock60: 101.416 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 6.0, lock15: 102.028, lock30: 101.903, lock45: 101.778, lock60: 101.653 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 6.25, lock15: 102.636, lock30: 102.511, lock45: 102.386, lock60: 102.261 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 6.5, lock15: 102.931, lock30: 102.806, lock45: 102.681, lock60: 102.556 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 6.75, lock15: 103.593, lock30: 103.468, lock45: 103.343, lock60: 103.218 },
+    { product: 'USDA', term: '30 Year Fixed', rate: 7.0, lock15: 104.24, lock30: 104.115, lock45: 103.99, lock60: 103.865 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 5.0, lock15: 96.666, lock30: 96.541, lock45: 96.416, lock60: 96.291 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 5.25, lock15: 97.97, lock30: 97.845, lock45: 97.72, lock60: 97.595 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 5.5, lock15: 99.378, lock30: 99.253, lock45: 99.128, lock60: 99.003 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 5.625, lock15: 99.918, lock30: 99.793, lock45: 99.668, lock60: 99.543 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 5.75, lock15: 100.33, lock30: 100.205, lock45: 100.08, lock60: 99.955 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 6.0, lock15: 101.373, lock30: 101.248, lock45: 101.123, lock60: 100.998 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 6.125, lock15: 101.815, lock30: 101.69, lock45: 101.565, lock60: 101.44 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 6.25, lock15: 101.855, lock30: 101.73, lock45: 101.605, lock60: 101.48 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 6.5, lock15: 102.702, lock30: 102.577, lock45: 102.452, lock60: 102.327 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 6.625, lock15: 102.99, lock30: 102.865, lock45: 102.74, lock60: 102.615 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 6.75, lock15: 102.867, lock30: 102.742, lock45: 102.617, lock60: 102.492 },
+    { product: 'Conventional', term: '30 Year Fixed', rate: 7.0, lock15: 103.749, lock30: 103.624, lock45: 103.499, lock60: 103.374 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 4.5, lock15: 98.704, lock30: 98.579, lock45: 98.454, lock60: 98.329 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 4.75, lock15: 99.342, lock30: 99.217, lock45: 99.092, lock60: 98.967 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 5.0, lock15: 100.116, lock30: 99.991, lock45: 99.866, lock60: 99.741 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 5.25, lock15: 100.778, lock30: 100.653, lock45: 100.528, lock60: 100.403 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 5.5, lock15: 101.514, lock30: 101.389, lock45: 101.264, lock60: 101.139 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 5.75, lock15: 101.863, lock30: 101.738, lock45: 101.613, lock60: 101.488 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 6.0, lock15: 102.539, lock30: 102.414, lock45: 102.289, lock60: 102.164 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 6.25, lock15: 103.081, lock30: 102.956, lock45: 102.831, lock60: 102.706 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 6.5, lock15: 103.609, lock30: 103.484, lock45: 103.359, lock60: 103.234 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 6.75, lock15: 104.24, lock30: 104.115, lock45: 103.99, lock60: 103.865 },
+    { product: 'Conventional', term: '15 Year Fixed', rate: 7.0, lock15: 104.71, lock30: 104.585, lock45: 104.46, lock60: 104.335 },
+  ];
+
+  const states = [
+    { code: 'AL', name: 'Alabama' }, { code: 'AK', name: 'Alaska' }, { code: 'AZ', name: 'Arizona' },
+    { code: 'AR', name: 'Arkansas' }, { code: 'CA', name: 'California' }, { code: 'CO', name: 'Colorado' },
+    { code: 'CT', name: 'Connecticut' }, { code: 'DE', name: 'Delaware' }, { code: 'DC', name: 'District of Columbia' },
+    { code: 'FL', name: 'Florida' }, { code: 'GA', name: 'Georgia' }, { code: 'HI', name: 'Hawaii' },
+    { code: 'ID', name: 'Idaho' }, { code: 'IL', name: 'Illinois' }, { code: 'IN', name: 'Indiana' },
+    { code: 'IA', name: 'Iowa' }, { code: 'KS', name: 'Kansas' }, { code: 'KY', name: 'Kentucky' },
+    { code: 'LA', name: 'Louisiana' }, { code: 'ME', name: 'Maine' }, { code: 'MD', name: 'Maryland' },
+    { code: 'MA', name: 'Massachusetts' }, { code: 'MI', name: 'Michigan' }, { code: 'MN', name: 'Minnesota' },
+    { code: 'MS', name: 'Mississippi' }, { code: 'MO', name: 'Missouri' }, { code: 'MT', name: 'Montana' },
+    { code: 'NE', name: 'Nebraska' }, { code: 'NV', name: 'Nevada' }, { code: 'NH', name: 'New Hampshire' },
+    { code: 'NJ', name: 'New Jersey' }, { code: 'NM', name: 'New Mexico' }, { code: 'NY', name: 'New York' },
+    { code: 'NC', name: 'North Carolina' }, { code: 'ND', name: 'North Dakota' }, { code: 'OH', name: 'Ohio' },
+    { code: 'OK', name: 'Oklahoma' }, { code: 'OR', name: 'Oregon' }, { code: 'PA', name: 'Pennsylvania' },
+    { code: 'PR', name: 'Puerto Rico' }, { code: 'RI', name: 'Rhode Island' }, { code: 'SC', name: 'South Carolina' },
+    { code: 'SD', name: 'South Dakota' }, { code: 'TN', name: 'Tennessee' }, { code: 'TX', name: 'Texas' },
+    { code: 'UT', name: 'Utah' }, { code: 'VT', name: 'Vermont' }, { code: 'VA', name: 'Virginia' },
+    { code: 'WA', name: 'Washington' }, { code: 'WV', name: 'West Virginia' }, { code: 'WI', name: 'Wisconsin' },
+    { code: 'WY', name: 'Wyoming' }
+  ];
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => {
+      const updated = { ...prev, [key]: value };
+      
+      if (key === 'zipCode' && value.length === 5) {
+        setZipLoading(true);
+        setZipError('');
+        
+        // Check built-in database first
+        if (zipDatabase[value]) {
+          setFilters(prev => ({
+            ...prev,
+            state: zipDatabase[value].state,
+            city: zipDatabase[value].city
+          }));
+          setZipLoading(false);
+          setZipError('');
+        } else {
+          // Try the ZIP code API as fallback
+          fetch(`https://api.zippopotam.us/us/${value}`)
+            .then(res => {
+              if (!res.ok) throw new Error('ZIP not found');
+              return res.json();
+            })
+            .then(data => {
+              if (data.places && data.places[0]) {
+                const place = data.places[0];
+                setFilters(prev => ({
+                  ...prev,
+                  state: place['state abbreviation'],
+                  city: place['place name']
+                }));
+                setZipError('');
+              }
+              setZipLoading(false);
+            })
+            .catch(() => {
+              setZipError('ZIP not found - please select state manually');
+              setZipLoading(false);
+            });
+        }
+      }
+      
+      if (key === 'purchasePrice' && value) {
+        const price = parseFloat(value);
+        if (updated.ltv) {
+          updated.loanAmount = (price * parseFloat(updated.ltv) / 100).toFixed(2);
+        } else if (updated.loanAmount) {
+          updated.ltv = ((parseFloat(updated.loanAmount) / price) * 100).toFixed(2);
+        }
+      } else if (key === 'loanAmount' && value) {
+        const loan = parseFloat(value);
+        if (updated.purchasePrice) {
+          updated.ltv = ((loan / parseFloat(updated.purchasePrice)) * 100).toFixed(2);
+        } else if (updated.ltv) {
+          updated.purchasePrice = (loan / (parseFloat(updated.ltv) / 100)).toFixed(2);
+        }
+      } else if (key === 'ltv' && value) {
+        const ltv = parseFloat(value);
+        if (updated.purchasePrice) {
+          updated.loanAmount = (parseFloat(updated.purchasePrice) * ltv / 100).toFixed(2);
+        } else if (updated.loanAmount) {
+          updated.purchasePrice = (parseFloat(updated.loanAmount) / (ltv / 100)).toFixed(2);
+        }
+      }
+      
+      return updated;
+    });
+  };
+
+  const getPriceForLock = (item, lockPeriod) => {
+    const lockKey = 'lock' + lockPeriod;
+    return item[lockKey] || item.lock30;
+  };
+
+  const calculateMonthlyPayment = (loanAmount, rate) => {
+    if (!loanAmount || !rate) return 0;
+    const principal = parseFloat(loanAmount);
+    const monthlyRate = parseFloat(rate) / 100 / 12;
+    const numPayments = 360;
+    
+    if (monthlyRate === 0) return principal / numPayments;
+    
+    const payment = principal * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / 
+                   (Math.pow(1 + monthlyRate, numPayments) - 1);
+    return payment;
+  };
+
+  const calculatePriceAdjustments = (basePrice, product, rate, term) => {
+    let adjustment = 0;
+    const adjustmentBreakdown = [];
+    const fico = parseInt(filters.fico);
+    const ltv = parseFloat(filters.ltv);
+    const loanAmount = parseFloat(filters.loanAmount);
+    const state = filters.state;
+
+    if (state) {
+      let stateAdj = 0;
+      
+      if (product === 'FHA' || product === 'VA' || product === 'USDA') {
+        if (state === 'PR') {
+          stateAdj = -0.150;
+        } else if (['AL', 'CO', 'DC', 'DE', 'GA', 'IA', 'IN', 'LA', 'MD', 'ME', 'MI', 'MS', 'NH', 'OK', 'TN', 'WI', 'WV'].includes(state)) {
+          stateAdj = 0.000;
+        } else if (state === 'AZ') {
+          stateAdj = 0.150;
+        } else if (['CA', 'IL', 'KY', 'NC', 'NY', 'OH', 'OR', 'PA', 'RI', 'SC', 'TX', 'VA', 'VT', 'WA'].includes(state)) {
+          stateAdj = 0.200;
+        } else if (['CT', 'FL', 'MA', 'NJ'].includes(state)) {
+          stateAdj = 0.250;
+        }
+      }
+      
+      if (product === 'Conventional') {
+        if (state === 'PR') {
+          stateAdj = -0.150;
+        } else if (['AL', 'CO', 'DC', 'DE', 'GA', 'IA', 'IN', 'LA', 'MD', 'ME', 'MI', 'MS', 'NH', 'NY', 'OK', 'TN', 'VT', 'WI', 'WV'].includes(state)) {
+          stateAdj = 0.000;
+        } else if (['AZ', 'CA', 'KY', 'NC', 'OH', 'OR', 'PA', 'RI', 'SC', 'VA', 'WA'].includes(state)) {
+          stateAdj = 0.100;
+        } else if (state === 'TX') {
+          stateAdj = 0.150;
+        } else if (['CT', 'FL', 'MA', 'IL'].includes(state)) {
+          stateAdj = 0.200;
+        } else if (state === 'NJ') {
+          stateAdj = 0.325;
+        }
+      }
+      
+      if (stateAdj !== 0) {
+        adjustment += stateAdj;
+        adjustmentBreakdown.push({ label: `State: ${state}`, value: stateAdj });
+      }
+    }
+
+    if (product === 'Conventional' && filters.loanPurpose === 'purchase' && fico && ltv) {
+      let ficoLtvAdj = 0;
+      
+      if (ltv > 95) {
+        if (fico >= 780) ficoLtvAdj = -0.125;
+        else if (fico >= 760) ficoLtvAdj = -0.250;
+        else if (fico >= 740) ficoLtvAdj = -0.500;
+        else if (fico >= 720) ficoLtvAdj = -0.750;
+        else if (fico >= 700) ficoLtvAdj = -0.875;
+        else if (fico >= 680) ficoLtvAdj = -1.125;
+        else if (fico >= 660) ficoLtvAdj = -1.250;
+        else if (fico >= 640) ficoLtvAdj = -1.500;
+        else ficoLtvAdj = -1.750;
+      } else if (ltv > 90) {
+        if (fico >= 780) ficoLtvAdj = -0.250;
+        else if (fico >= 760) ficoLtvAdj = -0.500;
+        else if (fico >= 740) ficoLtvAdj = -0.625;
+        else if (fico >= 720) ficoLtvAdj = -0.875;
+        else if (fico >= 700) ficoLtvAdj = -1.125;
+        else if (fico >= 680) ficoLtvAdj = -1.375;
+        else if (fico >= 660) ficoLtvAdj = -1.625;
+        else if (fico >= 640) ficoLtvAdj = -1.875;
+        else ficoLtvAdj = -2.250;
+      } else if (ltv > 80 && ltv <= 85) {
+        if (fico >= 780) ficoLtvAdj = -0.375;
+        else if (fico >= 760) ficoLtvAdj = -0.625;
+        else if (fico >= 740) ficoLtvAdj = -1.000;
+        else if (fico >= 720) ficoLtvAdj = -1.250;
+        else if (fico >= 700) ficoLtvAdj = -1.500;
+        else if (fico >= 680) ficoLtvAdj = -1.875;
+        else if (fico >= 660) ficoLtvAdj = -2.125;
+        else if (fico >= 640) ficoLtvAdj = -2.500;
+        else ficoLtvAdj = -2.875;
+      } else if (ltv > 75 && ltv <= 80) {
+        // LTV 75.01-80% range
+        if (fico >= 780) ficoLtvAdj = -0.375;
+        else if (fico >= 760) ficoLtvAdj = -0.625;
+        else if (fico >= 740) ficoLtvAdj = -0.875;
+        else if (fico >= 720) ficoLtvAdj = -1.250;
+        else if (fico >= 700) ficoLtvAdj = -1.375;
+        else if (fico >= 680) ficoLtvAdj = -1.750;
+        else if (fico >= 660) ficoLtvAdj = -1.875;
+        else if (fico >= 640) ficoLtvAdj = -2.250;
+        else ficoLtvAdj = -2.750;
+      } else if (ltv > 70 && ltv <= 75) {
+        // LTV 70.01-75% range
+        if (fico >= 780) ficoLtvAdj = 0.000;
+        else if (fico >= 760) ficoLtvAdj = -0.250;
+        else if (fico >= 740) ficoLtvAdj = -0.375;
+        else if (fico >= 720) ficoLtvAdj = -0.750;
+        else if (fico >= 700) ficoLtvAdj = -0.875;
+        else if (fico >= 680) ficoLtvAdj = -1.125;
+        else if (fico >= 660) ficoLtvAdj = -1.375;
+        else if (fico >= 640) ficoLtvAdj = -1.500;
+        else ficoLtvAdj = -2.125;
+      } else if (ltv > 60 && ltv <= 70) {
+        // LTV 60.01-70% range
+        if (fico >= 780) ficoLtvAdj = 0.000;
+        else if (fico >= 760) ficoLtvAdj = 0.000;
+        else if (fico >= 740) ficoLtvAdj = -0.125;
+        else if (fico >= 720) ficoLtvAdj = -0.250;
+        else if (fico >= 700) ficoLtvAdj = -0.375;
+        else if (fico >= 680) ficoLtvAdj = -0.625;
+        else if (fico >= 660) ficoLtvAdj = -0.750;
+        else if (fico >= 640) ficoLtvAdj = -1.125;
+        else ficoLtvAdj = -1.500;
+      } else if (ltv > 30 && ltv <= 60) {
+        // LTV 30.01-60% range
+        if (fico >= 640) ficoLtvAdj = 0.000;
+        else ficoLtvAdj = -0.125;
+      } else if (ltv <= 30) {
+        // LTV <=30%
+        ficoLtvAdj = 0.000;
+      }
+      
+      if (ficoLtvAdj !== 0) {
+        adjustment += ficoLtvAdj;
+        adjustmentBreakdown.push({ label: 'FICO x LTV', value: ficoLtvAdj });
+      }
+    }
+
+    if ((product === 'FHA' || product === 'VA' || product === 'USDA') && fico) {
+      let ficoAdj = 0;
+      if (fico >= 780) ficoAdj = 0.375;
+      else if (fico >= 760) ficoAdj = 0.250;
+      else if (fico >= 740) ficoAdj = 0.250;
+      else if (fico >= 720) ficoAdj = 0.250;
+      else if (fico >= 680) ficoAdj = 0.250;
+      else if (fico >= 660) ficoAdj = 0.000;
+      else if (fico >= 640) ficoAdj = -0.250;
+      else if (fico >= 620) ficoAdj = -0.500;
+      else if (fico >= 600) ficoAdj = -2.000;
+      else if (fico >= 580) ficoAdj = -3.000;
+      else ficoAdj = -4.000;
+      
+      if (ficoAdj !== 0) {
+        adjustment += ficoAdj;
+        adjustmentBreakdown.push({ label: 'FICO', value: ficoAdj });
+      }
+    }
+
+    if (loanAmount) {
+      let loanAmtAdj = 0;
+      
+      if (product === 'FHA' || product === 'VA' || product === 'USDA') {
+        if (loanAmount < 75000) loanAmtAdj = -0.500;
+        else if (loanAmount >= 75000 && loanAmount < 100000) loanAmtAdj = -0.250;
+        else if (loanAmount >= 100000 && loanAmount <= 150000) loanAmtAdj = 0.000;
+        else if (loanAmount > 150000 && loanAmount <= 200000) loanAmtAdj = 0.000;
+        else if (loanAmount > 200000 && loanAmount <= 450000) loanAmtAdj = 0.000;
+      }
+      
+      if (product === 'Conventional') {
+        if (loanAmount < 75000) loanAmtAdj = -0.750;
+        else if (loanAmount >= 75000 && loanAmount < 100000) loanAmtAdj = -0.500;
+        else if (loanAmount >= 100000 && loanAmount < 125000) loanAmtAdj = -0.250;
+        else if (loanAmount >= 125000 && loanAmount < 150000) loanAmtAdj = -0.100;
+        else if (loanAmount >= 150000) loanAmtAdj = 0.000;  // $150k+ has no adjustment
+      }
+      
+      if (loanAmtAdj !== 0) {
+        adjustment += loanAmtAdj;
+        adjustmentBreakdown.push({ label: 'Loan Amount', value: loanAmtAdj });
+      }
+    }
+
+    if (filters.occupancy === 'investment') {
+      adjustment += -0.500;
+      adjustmentBreakdown.push({ label: 'Investment Property', value: -0.500 });
+    } else if (filters.occupancy === 'second') {
+      adjustment += -0.250;
+      adjustmentBreakdown.push({ label: 'Second Home', value: -0.250 });
+    }
+
+    if (filters.propertyType === 'condo' && product === 'Conventional') {
+      adjustment += -0.750;
+      adjustmentBreakdown.push({ label: 'Condo LLPA', value: -0.750 });
+    }
+    
+    if (filters.propertyType === '2-4unit') {
+      adjustment += -0.500;
+      adjustmentBreakdown.push({ label: '2-4 Units', value: -0.500 });
+    }
+
+    if (filters.escrowWaiver && product === 'Conventional') {
+      adjustment += -0.125;
+      adjustmentBreakdown.push({ label: 'Escrow Waiver', value: -0.125 });
+    }
+
+    // Fixed Amortization Type credit for Conventional (always applied for 30 Year Fixed)
+    if (product === 'Conventional') {
+      adjustment += 0.125;
+      adjustmentBreakdown.push({ label: 'Fixed Amortization', value: 0.125 });
+    }
+
+    // Pay-up incentive (added to price at higher rates)
+    const payup = getPayup(rate, filters.state, filters.occupancy, product, term);
+    if (payup !== 0) {
+      adjustment += payup;
+      adjustmentBreakdown.push({ label: 'Pay-Up Incentive', value: payup });
+    }
+
+    return { adjustment, adjustedPrice: basePrice + adjustment, breakdown: adjustmentBreakdown };
+  };
+
+  const filteredData = useMemo(() => {
+    const filtered = rateData.filter(item => {
+      const matchesProduct = filters.productType === 'all' || item.product === filters.productType;
+      const matchesTerm = filters.loanType === 'all' || item.term === filters.loanType;
+      const matchesMinRate = !filters.minRate || item.rate >= parseFloat(filters.minRate);
+      const matchesMaxRate = !filters.maxRate || item.rate <= parseFloat(filters.maxRate);
+      const matchesSearch = !filters.searchTerm || 
+        item.product.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        item.term.toLowerCase().includes(filters.searchTerm.toLowerCase());
+      
+      return matchesProduct && matchesTerm && matchesMinRate && matchesMaxRate && matchesSearch;
+    });
+
+    const withCosts = filtered.map(item => {
+      const basePrice = getPriceForLock(item, filters.lockPeriod);
+      const calcResult = calculatePriceAdjustments(basePrice, item.product, item.rate, item.term);
+      
+      // Deduct broker comp from adjusted price
+      const priceAfterBrokerComp = calcResult.adjustedPrice - brokerComp;
+      
+      // Discount/Rebate calculation (100 - price after broker comp) * loan amount / 100
+      let discountRebate = 0;
+      if (filters.loanAmount) {
+        const loanAmt = parseFloat(filters.loanAmount);
+        discountRebate = (100 - priceAfterBrokerComp) * loanAmt / 100;
+      }
+      
+      const monthlyPayment = calculateMonthlyPayment(filters.loanAmount, item.rate);
+      const totalInterest = (monthlyPayment * 360) - parseFloat(filters.loanAmount || 0);
+      const totalCost = discountRebate + totalInterest;
+      
+      return {
+        ...item,
+        basePrice,
+        calcResult,
+        priceAfterBrokerComp,
+        closingCostAdjustment: discountRebate,
+        monthlyPayment,
+        totalCost
+      };
+    });
+
+    let lowestCost = Infinity;
+    let bestOptionIndex = -1;
+    if (filters.loanAmount) {
+      withCosts.forEach((item, index) => {
+        if (item.totalCost < lowestCost) {
+          lowestCost = item.totalCost;
+          bestOptionIndex = index;
+        }
+      });
+    }
+
+    return withCosts.map((item, index) => ({
+      ...item,
+      isBestOption: index === bestOptionIndex && filters.loanAmount
+    }));
+  }, [filters, brokerComp]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h1 className="text-3xl font-bold text-gray-800">TPO Go Rate Sheet Sifter</h1>
+          </div>
+          <p className="text-gray-600">Effective Date: 12/24/2025</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <h2 className="text-xl font-semibold text-gray-800">Filters</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Product Type</label>
+              <select
+                value={filters.productType}
+                onChange={(e) => handleFilterChange('productType', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="all">All Products</option>
+                <option value="FHA">FHA</option>
+                <option value="VA">VA</option>
+                <option value="USDA">USDA</option>
+                <option value="Conventional">Conventional</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Term</label>
+              <select
+                value={filters.loanType}
+                onChange={(e) => handleFilterChange('loanType', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="all">All Terms</option>
+                <option value="30 Year Fixed">30 Year Fixed</option>
+                <option value="15 Year Fixed">15 Year Fixed</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Lock Period</label>
+              <select
+                value={filters.lockPeriod}
+                onChange={(e) => handleFilterChange('lockPeriod', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="15">15-Day</option>
+                <option value="30">30-Day</option>
+                <option value="45">45-Day</option>
+                <option value="60">60-Day</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">ZIP Code (Optional)</label>
+              <input
+                type="text"
+                value={filters.zipCode}
+                onChange={(e) => handleFilterChange('zipCode', e.target.value)}
+                placeholder="e.g., 10977"
+                maxLength="5"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+              {zipLoading && <span className="text-xs text-blue-600">Looking up ZIP...</span>}
+              {zipError && <span className="text-xs text-red-600">{zipError}</span>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">State *</label>
+              <select
+                value={filters.state}
+                onChange={(e) => handleFilterChange('state', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">Select State</option>
+                {states.map(s => (
+                  <option key={s.code} value={s.code}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+              <input
+                type="text"
+                value={filters.city}
+                onChange={(e) => handleFilterChange('city', e.target.value)}
+                placeholder="City name"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">FICO Score</label>
+              <input
+                type="number"
+                value={filters.fico}
+                onChange={(e) => handleFilterChange('fico', e.target.value)}
+                placeholder="e.g., 720"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Purchase Price</label>
+              <input
+                type="number"
+                value={filters.purchasePrice}
+                onChange={(e) => handleFilterChange('purchasePrice', e.target.value)}
+                placeholder="e.g., 300000"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">LTV %</label>
+              <input
+                type="number"
+                step="0.01"
+                value={filters.ltv}
+                onChange={(e) => handleFilterChange('ltv', e.target.value)}
+                placeholder="e.g., 80.00"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount</label>
+              <input
+                type="number"
+                value={filters.loanAmount}
+                onChange={(e) => handleFilterChange('loanAmount', e.target.value)}
+                placeholder="e.g., 240000"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Broker Comp %</label>
+              <input
+                type="number"
+                step="0.125"
+                value={brokerComp}
+                onChange={(e) => setBrokerComp(parseFloat(e.target.value) || 0)}
+                placeholder="e.g., 2.5"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Occupancy</label>
+              <select
+                value={filters.occupancy}
+                onChange={(e) => handleFilterChange('occupancy', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="all">All</option>
+                <option value="primary">Primary Residence</option>
+                <option value="second">Second Home</option>
+                <option value="investment">Investment Property</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Purpose</label>
+              <select
+                value={filters.loanPurpose}
+                onChange={(e) => handleFilterChange('loanPurpose', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="all">All</option>
+                <option value="purchase">Purchase</option>
+                <option value="rateterm">Rate & Term Refi</option>
+                <option value="cashout">Cash-Out Refi</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Property Type</label>
+              <select
+                value={filters.propertyType}
+                onChange={(e) => handleFilterChange('propertyType', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="singlefamily">Single Family</option>
+                <option value="condo">Condo</option>
+                <option value="2-4unit">2-4 Units</option>
+              </select>
+            </div>
+
+            <div className="flex items-center pt-6">
+              <input
+                type="checkbox"
+                id="escrowWaiver"
+                checked={filters.escrowWaiver}
+                onChange={(e) => handleFilterChange('escrowWaiver', e.target.checked)}
+                className="mr-2"
+              />
+              <label htmlFor="escrowWaiver" className="text-sm text-gray-700">Escrow Waiver</label>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            Results ({filteredData.length})
+          </h2>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-indigo-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold">Product</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold">Term</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Rate</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Price</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Total Adjustments</th>
+                  {filters.loanAmount && (
+                    <>
+                      <th className="px-4 py-3 text-center text-sm font-semibold">Discount/Rebate $</th>
+                      <th className="px-4 py-3 text-center text-sm font-semibold">Monthly Payment</th>
+                      <th className="px-4 py-3 text-center text-sm font-semibold">Total Cost</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredData.map((item, index) => (
+                  <tr key={index} className={item.isBestOption ? 'bg-yellow-50 border-2 border-yellow-400' : 'hover:bg-gray-50'}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                          item.product === 'FHA' ? 'bg-blue-100 text-blue-800' :
+                          item.product === 'VA' ? 'bg-green-100 text-green-800' :
+                          item.product === 'USDA' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-purple-100 text-purple-800'
+                        }`}>
+                          {item.product}
+                        </span>
+                        {item.isBestOption && (
+                          <span className="px-2 py-1 rounded text-xs font-bold bg-yellow-400 text-yellow-900">
+                            BEST VALUE
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{item.term}</td>
+                    <td className="px-4 py-3 text-center font-semibold">{item.rate.toFixed(3)}%</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold text-lg ${item.priceAfterBrokerComp >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.priceAfterBrokerComp.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`font-semibold ${item.calcResult.adjustment >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {item.calcResult.adjustment >= 0 ? '+' : ''}{item.calcResult.adjustment.toFixed(3)}
+                        </span>
+                        {item.calcResult.breakdown.length > 0 && (
+                          <button 
+                            onClick={() => {
+                              const details = document.getElementById(`breakdown-${index}`);
+                              details.classList.toggle('hidden');
+                            }}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 underline"
+                          >
+                            details
+                          </button>
+                        )}
+                      </div>
+                      <div id={`breakdown-${index}`} className="hidden mt-2 text-xs space-y-1 bg-gray-50 p-2 rounded border border-gray-200">
+                        <div className="font-semibold text-gray-700 mb-1">Adjustment Breakdown:</div>
+                        {item.calcResult.breakdown.map((adj, i) => (
+                          <div key={i} className="flex justify-between gap-2">
+                            <span className="text-gray-600">{adj.label}:</span>
+                            <span className={`font-semibold ${adj.value >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {adj.value >= 0 ? '+' : ''}{adj.value.toFixed(3)}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between font-semibold">
+                          <span>Base Price:</span>
+                          <span>{item.basePrice.toFixed(3)}</span>
+                        </div>
+                        <div className="flex justify-between font-semibold">
+                          <span>Total LLPA:</span>
+                          <span className={item.calcResult.adjustment >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {item.calcResult.adjustment >= 0 ? '+' : ''}{item.calcResult.adjustment.toFixed(3)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between font-semibold border-t border-gray-300 pt-1">
+                          <span>Adjusted Price:</span>
+                          <span className={item.calcResult.adjustedPrice >= 100 ? 'text-green-600' : 'text-red-600'}>
+                            {item.calcResult.adjustedPrice.toFixed(3)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between font-semibold text-red-600">
+                          <span>Broker Comp:</span>
+                          <span>-{brokerComp.toFixed(3)}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-base border-t border-gray-300 pt-1">
+                          <span>Net Price:</span>
+                          <span className={item.priceAfterBrokerComp >= 100 ? 'text-green-600' : 'text-red-600'}>
+                            {item.priceAfterBrokerComp.toFixed(3)}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    {filters.loanAmount && (
+                      <>
+                        <td className="px-4 py-3 text-center">
+                          <span className={item.closingCostAdjustment < 0 ? 'text-green-600 font-semibold' : 'text-red-600'}>
+                            ${Math.abs(item.closingCostAdjustment).toFixed(2)}
+                          </span>
+                          <div className="text-xs text-gray-500">
+                            {item.closingCostAdjustment < 0 ? 'Credit' : 'Cost'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center font-semibold">${item.monthlyPayment.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-center font-bold">${item.totalCost.toFixed(2)}</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-indigo-600 text-white rounded-lg shadow-lg p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h3 className="font-semibold mb-2">Lock Desk Contact</h3>
+              <p>Email: lockdesk@tpogo.com</p>
+              <p>Phone: (860) 676-8003</p>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-2">Important Notes</h3>
+              <p className="text-sm">Indicator pricing only</p>
+              <p className="text-sm">Visit http://www.tpogo.com for true pricing</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MortgageRateSifter;
