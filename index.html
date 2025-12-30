@@ -18,55 +18,11 @@
       const [filters, setFilters] = useState({
         productType: "all", loanType: "all", lockPeriod: "30", fico: "", ltv: "",
         loanAmount: "", purchasePrice: "", occupancy: "primary", propertyType: "singlefamily",
-        loanPurpose: "purchase", escrowWaiver: false, zipCode: "", state: "", city: ""
+        loanPurpose: "purchase", escrowWaiver: false, zipCode: "", state: "", city: "",
+        ausType: "LP"
       });
       const [brokerComp, setBrokerComp] = useState(2.5);
       const [expandedRows, setExpandedRows] = useState({});
-
-      // ========== PAY-UP INCENTIVES (auto-extracted from Sheet 2) ==========
-      // 1. NY Primary Residence
-      const nyPrimaryPayups = {"5":0,"6":0.63,"7":1.32,"8":0.4,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0.03,"5.25":0.37,"5.375":0.37,"5.49":0.37,"5.5":0.37,"5.625":0.37,"5.75":0.63,"5.875":0.63,"5.99":0.63,"6.125":0.63,"6.25":0.96,"6.375":0.96,"6.49":0.96,"6.5":0.96,"6.625":0.96,"6.75":1.33,"6.875":1.32,"6.99":1.32,"7.125":1.32,"7.25":1.22,"7.375":1.22,"7.49":1.22,"7.5":1.22,"7.625":1.22,"7.75":0.4,"7.875":0.4,"7.99":0.4,"8.125":0.4,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0};
-      // 2. NY Investment
-      const nyInvestmentPayups = {"5":0,"6":0.63,"7":1.32,"8":0.4,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0.03,"5.25":0.37,"5.375":0.37,"5.49":0.37,"5.5":0.37,"5.625":0.37,"5.75":0.63,"5.875":0.63,"5.99":0.63,"6.125":0.63,"6.25":0.96,"6.375":0.96,"6.49":0.96,"6.5":0.96,"6.625":0.96,"6.75":1.33,"6.875":1.32,"6.99":1.32,"7.125":1.32,"7.25":1.22,"7.375":1.22,"7.49":1.22,"7.5":1.22,"7.625":1.22,"7.75":0.4,"7.875":0.4,"7.99":0.4,"8.125":0.4,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0};
-      // 3. NY Second Home
-      const nySecondHomePayups = {"5":0,"6":0.63,"7":1.32,"8":0.4,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0.03,"5.25":0.37,"5.375":0.37,"5.49":0.37,"5.5":0.37,"5.625":0.37,"5.75":0.63,"5.875":0.63,"5.99":0.63,"6.125":0.63,"6.25":0.96,"6.375":0.96,"6.49":0.96,"6.5":0.96,"6.625":0.96,"6.75":1.33,"6.875":1.32,"6.99":1.32,"7.125":1.32,"7.25":1.22,"7.375":1.22,"7.49":1.22,"7.5":1.22,"7.625":1.22,"7.75":0.4,"7.875":0.4,"7.99":0.4,"8.125":0.4,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0};
-      // 4. Investment - No NY, FL (all other states)
-      const investmentOtherPayups = {"5":0,"6":0.15,"7":0.775,"8":0,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0,"5.375":0,"5.49":0,"5.5":0,"5.625":0,"5.75":0.15,"5.875":0.15,"5.99":0.15,"6.125":0.15,"6.25":0.65,"6.375":0.65,"6.49":0.65,"6.5":0.65,"6.625":0.775,"6.75":0.775,"6.875":0.775,"6.99":0.775,"7.125":0.9,"7.25":0.775,"7.375":0.775,"7.49":0.775,"7.5":0.9,"7.625":0.775,"7.75":0,"7.875":0,"7.99":0,"8.125":0,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0};
-      // 5. Second Home - no NY, FL (all other states)
-      const secondHomeOtherPayups = {"5":0,"6":0,"7":0.775,"8":0,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0,"5.375":0,"5.49":0,"5.5":0,"5.625":0,"5.75":0,"5.875":0,"5.99":0,"6.125":0,"6.25":0,"6.375":0,"6.49":0,"6.5":0.15,"6.625":0.15,"6.75":0.775,"6.875":0.775,"6.99":0.775,"7.125":0.775,"7.25":0.9,"7.375":0.9,"7.49":0.9,"7.5":0.775,"7.625":0.775,"7.75":0,"7.875":0,"7.99":0,"8.125":0,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0};
-
-      const getPayup = (rate, state, occupancy, product, term) => {
-        // Pay-ups only apply to Conventional 30yr
-        if (product !== "Conventional" || !term.includes("30")) return 0;
-        
-        // Select the appropriate pay-up table based on state and occupancy
-        var payupTable = {};
-        
-        if (state === "NY") {
-          // NY has special pay-up tables
-          if (occupancy === "investment") payupTable = nyInvestmentPayups;
-          else if (occupancy === "second") payupTable = nySecondHomePayups;
-          else payupTable = nyPrimaryPayups; // Primary residence
-        } else if (state === "FL") {
-          // FL has NO pay-ups (excluded from "other" tables)
-          return 0;
-        } else {
-          // All other states - only Investment and Second Home have pay-ups
-          if (occupancy === "investment") payupTable = investmentOtherPayups;
-          else if (occupancy === "second") payupTable = secondHomeOtherPayups;
-          else return 0; // Primary residence in other states has no pay-ups
-        }
-        
-        if (!payupTable || Object.keys(payupTable).length === 0) return 0;
-        
-        // Find closest rate in pay-up table
-        var rates = Object.keys(payupTable).map(Number).sort(function(a,b){return a-b;});
-        var closest = rates[0];
-        for (var i = 0; i < rates.length; i++) {
-          if (Math.abs(rates[i] - rate) < Math.abs(closest - rate)) closest = rates[i];
-        }
-        return payupTable[closest] || 0;
-      };
 
       const zipDatabase = {
         "10952":{state:"NY",city:"Monsey"}, "10977":{state:"NY",city:"Spring Valley"},
@@ -769,6 +725,18 @@
         {product:"VA",term:"30 Year Fixed",rate:11.25,lock15:105.775,lock30:105.625,lock45:106.025,lock60:105.875}
       ];
 
+      // Pay-up tables from Sheet 2 (extracted daily)
+      const nyPrimaryPayups = {"5":0,"6":0.205,"7":2.355,"8":0.778,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0.087,"5.375":0.087,"5.49":0.087,"5.5":0.086,"5.625":0.087,"5.75":0,"5.875":0,"5.99":0,"6.125":0.4,"6.25":1.228,"6.375":1.342,"6.49":1.342,"6.5":1.504,"6.625":1.612,"6.75":2.401,"6.875":2.44,"6.99":2.44,"7.125":2.355,"7.25":1.904,"7.375":1.904,"7.49":1.904,"7.5":1.904,"7.625":1.904,"7.75":0.777,"7.875":0.777,"7.99":0.777,"8.125":0.778,"8.25":0.319,"8.375":0.318,"8.49":0.318,"8.5":0.318,"8.625":0.319,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const nyInvestmentPayups = {"5":0,"6":0.205,"7":2.355,"8":0.778,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0.087,"5.375":0.087,"5.49":0.087,"5.5":0.086,"5.625":0.087,"5.75":0.15,"5.875":0.15,"5.99":0.15,"6.125":0.4,"6.25":1.228,"6.375":1.342,"6.49":1.342,"6.5":1.504,"6.625":1.612,"6.75":2.401,"6.875":2.44,"6.99":2.44,"7.125":2.355,"7.25":1.904,"7.375":1.904,"7.49":1.904,"7.5":1.904,"7.625":1.904,"7.75":0.777,"7.875":0.777,"7.99":0.777,"8.125":0.778,"8.25":0.319,"8.375":0.318,"8.49":0.318,"8.5":0.318,"8.625":0.319,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const nySecondHomePayups = {"5":0,"6":0.205,"7":2.355,"8":0.778,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0.087,"5.375":0.087,"5.49":0.087,"5.5":0.086,"5.625":0.087,"5.75":0,"5.875":0,"5.99":0,"6.125":0.4,"6.25":1.228,"6.375":1.342,"6.49":1.342,"6.5":1.504,"6.625":1.612,"6.75":2.401,"6.875":2.44,"6.99":2.44,"7.125":2.355,"7.25":1.904,"7.375":1.904,"7.49":1.904,"7.5":1.904,"7.625":1.904,"7.75":0.777,"7.875":0.777,"7.99":0.777,"8.125":0.778,"8.25":0.319,"8.375":0.318,"8.49":0.318,"8.5":0.318,"8.625":0.319,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const investmentOtherPayups = {"5":0,"6":0.15,"7":0.775,"8":0,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0,"5.375":0,"5.49":0,"5.5":0,"5.625":0,"5.75":0.15,"5.875":0.15,"5.99":0.15,"6.125":0.15,"6.25":0.65,"6.375":0.65,"6.49":0.65,"6.5":0.65,"6.625":0.775,"6.75":0.775,"6.875":0.775,"6.99":0.775,"7.125":0.9,"7.25":0.775,"7.375":0.775,"7.49":0.775,"7.5":0.9,"7.625":0.775,"7.75":0,"7.875":0,"7.99":0,"8.125":0,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const secondHomeOtherPayups = {"5":0,"6":0,"7":0.775,"8":0,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0,"5.375":0,"5.49":0,"5.5":0,"5.625":0,"5.75":0,"5.875":0,"5.99":0,"6.125":0,"6.25":0,"6.375":0,"6.49":0,"6.5":0.15,"6.625":0.15,"6.75":0.775,"6.875":0.775,"6.99":0.775,"7.125":0.775,"7.25":0.9,"7.375":0.9,"7.49":0.9,"7.5":0.775,"7.625":0.775,"7.75":0,"7.875":0,"7.99":0,"8.125":0,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const flPrimaryLPPayups = {"5":0,"6":0.63,"7":1.32,"8":0.4,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0.03,"5.25":0.37,"5.375":0.37,"5.49":0.37,"5.5":0.37,"5.625":0.37,"5.75":0.63,"5.875":0.63,"5.99":0.63,"6.125":0.63,"6.25":0.96,"6.375":0.96,"6.49":0.96,"6.5":0.96,"6.625":0.96,"6.75":1.33,"6.875":1.32,"6.99":1.32,"7.125":1.32,"7.25":1.22,"7.375":1.22,"7.49":1.22,"7.5":1.22,"7.625":1.22,"7.75":0.4,"7.875":0.4,"7.99":0.4,"8.125":0.4,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const flInvestmentLPPayups = {"5":0,"6":0.63,"7":1.32,"8":0.4,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0.03,"5.25":0.37,"5.375":0.37,"5.49":0.37,"5.5":0.37,"5.625":0.37,"5.75":0.63,"5.875":0.63,"5.99":0.63,"6.125":0.63,"6.25":0.96,"6.375":0.96,"6.49":0.96,"6.5":0.96,"6.625":0.96,"6.75":1.33,"6.875":1.32,"6.99":1.32,"7.125":1.32,"7.25":1.22,"7.375":1.22,"7.49":1.22,"7.5":1.22,"7.625":1.22,"7.75":0.4,"7.875":0.4,"7.99":0.4,"8.125":0.4,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const flInvestmentDUPayups = {"5":0,"6":0.15,"7":0.775,"8":0,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0,"5.375":0,"5.49":0,"5.5":0,"5.625":0,"5.75":0.15,"5.875":0.15,"5.99":0.15,"6.125":0.15,"6.25":0.65,"6.375":0.65,"6.49":0.65,"6.5":0.65,"6.625":0.775,"6.75":0.775,"6.875":0.775,"6.99":0.775,"7.125":0.9,"7.25":0.775,"7.375":0.775,"7.49":0.775,"7.5":0.9,"7.625":0.775,"7.75":0,"7.875":0,"7.99":0,"8.125":0,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const flSecondHomeLPPayups = {"5":0,"6":0.63,"7":1.32,"8":0.4,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0.03,"5.25":0.37,"5.375":0.37,"5.49":0.37,"5.5":0.37,"5.625":0.37,"5.75":0.63,"5.875":0.63,"5.99":0.63,"6.125":0.63,"6.25":0.96,"6.375":0.96,"6.49":0.96,"6.5":0.96,"6.625":0.96,"6.75":1.33,"6.875":1.32,"6.99":1.32,"7.125":1.32,"7.25":1.22,"7.375":1.22,"7.49":1.22,"7.5":1.22,"7.625":1.22,"7.75":0.4,"7.875":0.4,"7.99":0.4,"8.125":0.4,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+      const flSecondHomeDUPayups = {"5":0,"6":0,"7":0.775,"8":0,"9":0,"4.75":0,"4.875":0,"4.99":0,"5.125":0,"5.25":0,"5.375":0,"5.49":0,"5.5":0,"5.625":0,"5.75":0,"5.875":0,"5.99":0,"6.125":0,"6.25":0,"6.375":0,"6.49":0,"6.5":0.15,"6.625":0.15,"6.75":0.775,"6.875":0.775,"6.99":0.775,"7.125":0.775,"7.25":0.9,"7.375":0.9,"7.49":0.9,"7.5":0.775,"7.625":0.775,"7.75":0,"7.875":0,"7.99":0,"8.125":0,"8.25":0,"8.375":0,"8.49":0,"8.5":0,"8.625":0,"8.75":0,"8.875":0,"8.99":0,"9.125":0,"9.25":0,"9.375":0,"9.49":0,"9.5":0};
+
       const states = [
         {code:"AL",name:"Alabama"},{code:"AZ",name:"Arizona"},{code:"CA",name:"California"},
         {code:"CO",name:"Colorado"},{code:"CT",name:"Connecticut"},{code:"DC",name:"DC"},
@@ -784,6 +752,50 @@
         {code:"VT",name:"Vermont"},{code:"WA",name:"Washington"},{code:"WI",name:"Wisconsin"},
         {code:"WV",name:"West Virginia"}
       ];
+
+      // Get pay-up value based on state, occupancy, and rate
+      // Pay-ups are ADDED to price (they are credits/rebates)
+      const getPayup = (rate, state, occupancy, product, term, ausType) => {
+        // Pay-ups only apply to Conventional 30yr
+        if (product !== "Conventional" || !term.includes("30")) return 0;
+        
+        var payupTable = {};
+        
+        if (state === "NY") {
+          // NY has special pay-up tables for all occupancy types
+          if (occupancy === "investment") payupTable = nyInvestmentPayups;
+          else if (occupancy === "second") payupTable = nySecondHomePayups;
+          else payupTable = nyPrimaryPayups;
+        } else if (state === "FL") {
+          // FL has LP and DU variants
+          if (occupancy === "investment") {
+            payupTable = ausType === "DU" ? flInvestmentDUPayups : flInvestmentLPPayups;
+          } else if (occupancy === "second") {
+            payupTable = ausType === "DU" ? flSecondHomeDUPayups : flSecondHomeLPPayups;
+          } else {
+            payupTable = flPrimaryLPPayups; // Primary only has LP
+          }
+        } else {
+          // All other states - only Investment and Second Home have pay-ups
+          if (occupancy === "investment") payupTable = investmentOtherPayups;
+          else if (occupancy === "second") payupTable = secondHomeOtherPayups;
+          else return 0; // Primary residence in other states has no pay-ups
+        }
+        
+        // Find exact or closest rate in pay-up table
+        var rateKey = rate.toString();
+        if (payupTable[rateKey] !== undefined) return payupTable[rateKey];
+        
+        // Try to find closest rate
+        var rates = Object.keys(payupTable).map(Number).sort(function(a,b){return a-b;});
+        if (rates.length === 0) return 0;
+        
+        var closest = rates[0];
+        for (var i = 0; i < rates.length; i++) {
+          if (Math.abs(rates[i] - rate) < Math.abs(closest - rate)) closest = rates[i];
+        }
+        return payupTable[closest] || 0;
+      };
 
       const handleFilterChange = (key, value) => {
         setFilters(function(prev) {
@@ -810,7 +822,6 @@
         var fico = parseInt(filters.fico) || 0;
         var ltv = parseFloat(filters.ltv) || 0;
         var state = filters.state;
-        var loanAmount = parseFloat(filters.loanAmount) || 0;
 
         // ========== FICO x LTV Matrix (Conventional Purchase) ==========
         if (product === "Conventional" && filters.loanPurpose === "purchase" && fico && ltv) {
@@ -888,13 +899,15 @@
           breakdown.push({label:"Conventional Special", value:0.25});
         }
 
-        // ========== Pay-Up Incentive ==========
-        var payup = getPayup(rate, state, filters.occupancy, product, term);
-        if (payup !== 0) { adjustment += payup; breakdown.push({label:"Pay-Up Incentive", value:payup}); }
+        // ========== Pay-Up Incentive (ADDED to price) ==========
+        var payup = getPayup(rate, state, filters.occupancy, product, term, filters.ausType);
+        if (payup !== 0) {
+          adjustment += payup;
+          breakdown.push({label:"Pay-Up Incentive", value:payup});
+        }
 
         // ========== Escrow Waiver (CA & NY exempt) ==========
         if (filters.escrowWaiver && product === "Conventional") {
-          // CA and NY have NO escrow waiver hit
           if (state !== "CA" && state !== "NY") {
             adjustment += -0.125;
             breakdown.push({label:"Escrow Waiver", value:-0.125});
@@ -952,12 +965,12 @@
             <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
               <h1 className="text-2xl font-bold text-gray-800">TPO Go Rate Sheet Sifter</h1>
               <p className="text-gray-600">Effective Date: 12/29/2025</p>
-              <p className="text-xs text-green-600 mt-1">Auto-updated via Gmail | All Pay-Ups + Escrow Waiver Rules Applied</p>
+              <p className="text-xs text-green-600 mt-1">Auto-updated via Gmail ? Includes NY/FL Pay-Up Incentives</p>
             </div>
 
             <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Filters</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 <div><label className="block text-sm font-medium mb-1">Product</label><select value={filters.productType} onChange={function(e){handleFilterChange("productType", e.target.value)}} className="w-full p-2 border rounded"><option value="all">All</option><option value="FHA">FHA</option><option value="VA">VA</option><option value="USDA">USDA</option><option value="Conventional">Conventional</option></select></div>
                 <div><label className="block text-sm font-medium mb-1">Term</label><select value={filters.loanType} onChange={function(e){handleFilterChange("loanType", e.target.value)}} className="w-full p-2 border rounded"><option value="all">All</option><option value="30 Year Fixed">30 Year</option><option value="15 Year Fixed">15 Year</option></select></div>
                 <div><label className="block text-sm font-medium mb-1">Lock Period</label><select value={filters.lockPeriod} onChange={function(e){handleFilterChange("lockPeriod", e.target.value)}} className="w-full p-2 border rounded"><option value="15">15-Day</option><option value="30">30-Day</option><option value="45">45-Day</option><option value="60">60-Day</option></select></div>
@@ -971,7 +984,8 @@
                 <div><label className="block text-sm font-medium mb-1">Loan Purpose</label><select value={filters.loanPurpose} onChange={function(e){handleFilterChange("loanPurpose", e.target.value)}} className="w-full p-2 border rounded"><option value="purchase">Purchase</option><option value="rateterm">Rate/Term Refi</option><option value="cashout">Cash-Out Refi</option></select></div>
                 <div><label className="block text-sm font-medium mb-1">Property Type</label><select value={filters.propertyType} onChange={function(e){handleFilterChange("propertyType", e.target.value)}} className="w-full p-2 border rounded"><option value="singlefamily">Single Family</option><option value="condo">Condo</option><option value="2-4unit">2-4 Units</option></select></div>
                 <div><label className="block text-sm font-medium mb-1">Occupancy</label><select value={filters.occupancy} onChange={function(e){handleFilterChange("occupancy", e.target.value)}} className="w-full p-2 border rounded"><option value="primary">Primary Residence</option><option value="second">Second Home</option><option value="investment">Investment</option></select></div>
-                <div className="flex items-center pt-6"><input type="checkbox" id="escrowWaiver" checked={filters.escrowWaiver} onChange={function(e){handleFilterChange("escrowWaiver", e.target.checked)}} className="mr-2" /><label htmlFor="escrowWaiver" className="text-sm">Escrow Waiver (-0.125, CA/NY exempt)</label></div>
+                <div><label className="block text-sm font-medium mb-1">AUS Type (FL)</label><select value={filters.ausType} onChange={function(e){handleFilterChange("ausType", e.target.value)}} className="w-full p-2 border rounded"><option value="LP">LP (Loan Prospector)</option><option value="DU">DU (Desktop Underwriter)</option></select></div>
+                <div className="flex items-center pt-6"><input type="checkbox" id="escrowWaiver" checked={filters.escrowWaiver} onChange={function(e){handleFilterChange("escrowWaiver", e.target.checked)}} className="mr-2" /><label htmlFor="escrowWaiver" className="text-sm">Escrow Waiver (CA/NY exempt)</label></div>
               </div>
             </div>
 
