@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>TPO Go Complete Rate Sifter</title><script src="https://unpkg.com/react@18/umd/react.development.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script src="https://cdn.tailwindcss.com"></script></head><body><div id="root"></div><script type="text/babel">
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>TPO Go Complete Rate Sifter</title><script src="https://unpkg.com/react@17/umd/react.development.js"></script><script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script src="https://cdn.tailwindcss.com"></script></head><body><div id="root"></div><script type="text/babel">
 const {useState,useMemo,useEffect}=React;
 const highCostCounties={};
 Object.assign(highCostCounties,{"02013":{"c":"Aleutians East Borough","s":"AK","l":[1249125,1599375,1933200,2402625]},"02016":{"c":"Aleutians West Census Are","s":"AK","l":[1249125,1599375,1933200,2402625]},"02020":{"c":"Anchorage Municipality","s":"AK","l":[1249125,1599375,1933200,2402625]},"02050":{"c":"Bethel Census Area","s":"AK","l":[1249125,1599375,1933200,2402625]},"02060":{"c":"Bristol Bay Borough","s":"AK","l":[1249125,1599375,1933200,2402625]},"02063":{"c":"Chugach Census Area","s":"AK","l":[1249125,1599375,1933200,2402625]},"02066":{"c":"Copper River Census Area","s":"AK","l":[1249125,1599375,1933200,2402625]},"02068":{"c":"Denali Borough","s":"AK","l":[1249125,1599375,1933200,2402625]},"02070":{"c":"Dillingham Census Area","s":"AK","l":[1249125,1599375,1933200,2402625]},"02090":{"c":"Fairbanks North Star Boro","s":"AK","l":[1249125,1599375,1933200,2402625]},"02100":{"c":"Haines Borough","s":"AK","l":[1249125,1599375,1933200,2402625]},"02105":{"c":"Hoonah-Angoon Census Area","s":"AK","l":[1249125,1599375,1933200,2402625]},"02110":{"c":"Juneau City And Borough","s":"AK","l":[1249125,1599375,1933200,2402625]},"02122":{"c":"Kenai Peninsula Borough","s":"AK","l":[1249125,1599375,1933200,2402625]},"02130":{"c":"Ketchikan Gateway Borough","s":"AK","l":[1249125,1599375,1933200,2402625]}});
@@ -613,5 +613,5 @@ const App=()=>{
     </div>
   );
 };
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.render(<App/>,document.getElementById("root"));
 </script></body></html>
