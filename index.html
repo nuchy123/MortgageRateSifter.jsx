@@ -267,61 +267,38 @@ const App=()=>{
   };
 
   // ZIP lookup via API
-  const handleZip=async(zip)=>{
+  const handleZip=(zip)=>{
     setF(p=>({...p,zip,incomeLevel:''}));
     setZipError('');
     setAmiData(null);
     
     if(zip.length===5 && /^d{5}$/.test(zip)){
       setZipLoading(true);
-      try{
-        const res=await fetch('https://api.zippopotam.us/us/'+zip);
-        if(res.ok){
-          const data=await res.json();
+      fetch('https://api.zippopotam.us/us/'+zip)
+        .then(res=>{
+          if(!res.ok)throw new Error('Not found');
+          return res.json();
+        })
+        .then(data=>{
           const place=data.places[0];
           const stateAbbr=place['state abbreviation'];
           const city=place['place name'];
           
+          // Find county in allCounties by state
           let foundFips='';
           let foundCounty='';
-          
-          try{
-            const geoRes=await fetch('https://nominatim.openstreetmap.org/reverse?lat='+place.latitude+'&lon='+place.longitude+'&format=json&addressdetails=1');
-            if(geoRes.ok){
-              const geoData=await geoRes.json();
-              let countyFromGeo=geoData.address?.county||'';
-              countyFromGeo=countyFromGeo.replace(/ County$/i,'').replace(/ Parish$/i,'').replace(/ Borough$/i,'');
-              if(countyFromGeo){
-                for(const[fips,info] of Object.entries(allCounties)){
-                  if(info[1]===stateAbbr){
-                    const dbCounty=info[0].toLowerCase();
-                    const searchCounty=countyFromGeo.toLowerCase();
-                    if(dbCounty===searchCounty || dbCounty.includes(searchCounty) || searchCounty.includes(dbCounty.substring(0,8))){
-                      foundFips=fips;
-                      foundCounty=info[0];
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          }catch(geoErr){console.log('Geo note:',geoErr);}
-          
-          if(!foundFips){
-            for(const[fips,info] of Object.entries(allCounties)){
-              if(info[1]===stateAbbr){foundFips=fips;foundCounty=info[0];break;}
-            }
+          for(const[fips,info] of Object.entries(allCounties)){
+            if(info[1]===stateAbbr){foundFips=fips;foundCounty=info[0];break;}
           }
           
           setF(p=>({...p,state:stateAbbr,city:city,county:foundCounty,fips:foundFips}));
           if(foundFips && amiLookup[foundFips]){setAmiData(amiLookup[foundFips]);}
-        }else{
+          setZipLoading(false);
+        })
+        .catch(e=>{
           setZipError('ZIP not found');
-        }
-      }catch(e){
-        setZipError('Lookup failed');
-      }
-      setZipLoading(false);
+          setZipLoading(false);
+        });
     }
   };
 
