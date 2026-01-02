@@ -373,16 +373,26 @@ Object.assign(RATEDATA.zipLookup,{"99256": "53063", "99258": "53063", "99260": "
 Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "02130", "99929": "02275", "99950": "02198"});
 </script>
 <script>
-
 // ===========================================
 // VANILLA JS MORTGAGE CALCULATOR
 // ===========================================
 
 (function() {
-  const {rates,sp,stAdj,loanAdj,misc,payups,highCostCounties,allCounties,BASELINE,amiLookup,zipLookup,effectiveDate} = window.RATEDATA;
+  var rates = window.RATEDATA.rates;
+  var sp = window.RATEDATA.sp;
+  var stAdj = window.RATEDATA.stAdj;
+  var loanAdj = window.RATEDATA.loanAdj;
+  var misc = window.RATEDATA.misc;
+  var payups = window.RATEDATA.payups;
+  var highCostCounties = window.RATEDATA.highCostCounties;
+  var allCounties = window.RATEDATA.allCounties;
+  var BASELINE = window.RATEDATA.BASELINE;
+  var amiLookup = window.RATEDATA.amiLookup;
+  var zipLookup = window.RATEDATA.zipLookup;
+  var effectiveDate = window.RATEDATA.effectiveDate;
   
   // Form state
-  let f = {
+  var f = {
     zip:'',state:'',county:'',city:'',fips:'',
     fico:'',ltv:'',loanAmt:'',price:'',
     occ:'primary',prop:'sf',units:'1',purpose:'purchase',lock:'30',
@@ -390,18 +400,18 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     prodFilter:'all',catFilter:'all',termFilter:'all',
     incomeLevel:'',firstTimeBuyer:'no'
   };
-  let amiData = null;
-  let expanded = {};
+  var amiData = null;
+  var expanded = {};
   
   // DOM Elements
-  const app = document.getElementById('app');
+  var app = document.getElementById('app');
   
   // ===========================================
   // HELPER FUNCTIONS
   // ===========================================
   
   function getCountyLimit(fips, units) {
-    const u = parseInt(units) || 1;
+    var u = parseInt(units) || 1;
     if (highCostCounties[fips]) return highCostCounties[fips].l[u-1];
     return BASELINE[u];
   }
@@ -411,9 +421,9 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
   }
   
   function isHighBalance(loanAmt, fips, units) {
-    const u = parseInt(units) || 1;
-    const baseline = BASELINE[u];
-    const countyLimit = getCountyLimit(fips, units);
+    var u = parseInt(units) || 1;
+    var baseline = BASELINE[u];
+    var countyLimit = getCountyLimit(fips, units);
     return loanAmt > baseline && loanAmt <= countyLimit;
   }
   
@@ -440,19 +450,19 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
   }
   
   // FICO x LTV Matrices
-  const ficoLtvPurch = {780:[0,0,0,0,-.375,-.375,-.25],760:[0,0,0,-.25,-.625,-.625,-.5],740:[0,0,-.125,-.375,-.875,-1,-.75],720:[0,0,-.25,-.75,-1.25,-1.25,-1],700:[0,0,-.375,-.875,-1.375,-1.5,-1.25],680:[0,0,-.625,-1.125,-1.75,-1.875,-1.5],660:[0,0,-.75,-1.375,-1.875,-2.125,-1.75],640:[0,0,-1.125,-1.5,-2.25,-2.5,-2],620:[0,-.125,-1.5,-2.125,-2.75,-2.875,-2.625]};
-  const ficoLtvRefi = {780:[0,0,0,-.125,-.5,-.625,-.5],760:[0,0,-.125,-.375,-.875,-1,-.75],740:[0,0,-.25,-.75,-1.125,-1.375,-1.125],720:[0,0,-.5,-1,-1.625,-1.75,-1.5],700:[0,0,-.625,-1.25,-1.875,-2.125,-1.75],680:[0,0,-.875,-1.625,-2.25,-2.5,-2.125],660:[0,-.125,-1.125,-1.875,-2.5,-3,-2.375],640:[0,-.25,-1.375,-2.125,-2.875,-3.375,-2.875],620:[0,-.375,-1.75,-2.5,-3.5,-3.875,-3.625]};
-  const ficoLtvCO = {780:[-.375,-.375,-.625,-.875,-1.375,-1.375,-1.375],760:[-.375,-.375,-.875,-1.25,-1.875,-1.875,-1.875],740:[-.375,-.375,-1,-1.625,-2.375,-2.375,-2.375],720:[-.375,-.5,-1.375,-2,-2.75,-2.75,-2.75],700:[-.375,-.5,-1.625,-2.625,-3.25,-3.25,-3.25],680:[-.375,-.625,-2,-2.875,-3.75,-3.75,-3.75],660:[-.375,-.875,-2.75,-4,-4.75,-4.75,-4.75],640:[-.375,-1.375,-3.125,-4.625,-5.125,-5.125,-5.125],620:[-.375,-1.375,-3.375,-4.875,-5.125,-5.125,-5.125]};
+  var ficoLtvPurch = {780:[0,0,0,0,-.375,-.375,-.25],760:[0,0,0,-.25,-.625,-.625,-.5],740:[0,0,-.125,-.375,-.875,-1,-.75],720:[0,0,-.25,-.75,-1.25,-1.25,-1],700:[0,0,-.375,-.875,-1.375,-1.5,-1.25],680:[0,0,-.625,-1.125,-1.75,-1.875,-1.5],660:[0,0,-.75,-1.375,-1.875,-2.125,-1.75],640:[0,0,-1.125,-1.5,-2.25,-2.5,-2],620:[0,-.125,-1.5,-2.125,-2.75,-2.875,-2.625]};
+  var ficoLtvRefi = {780:[0,0,0,-.125,-.5,-.625,-.5],760:[0,0,-.125,-.375,-.875,-1,-.75],740:[0,0,-.25,-.75,-1.125,-1.375,-1.125],720:[0,0,-.5,-1,-1.625,-1.75,-1.5],700:[0,0,-.625,-1.25,-1.875,-2.125,-1.75],680:[0,0,-.875,-1.625,-2.25,-2.5,-2.125],660:[0,-.125,-1.125,-1.875,-2.5,-3,-2.375],640:[0,-.25,-1.375,-2.125,-2.875,-3.375,-2.875],620:[0,-.375,-1.75,-2.5,-3.5,-3.875,-3.625]};
+  var ficoLtvCO = {780:[-.375,-.375,-.625,-.875,-1.375,-1.375,-1.375],760:[-.375,-.375,-.875,-1.25,-1.875,-1.875,-1.875],740:[-.375,-.375,-1,-1.625,-2.375,-2.375,-2.375],720:[-.375,-.5,-1.375,-2,-2.75,-2.75,-2.75],700:[-.375,-.5,-1.625,-2.625,-3.25,-3.25,-3.25],680:[-.375,-.625,-2,-2.875,-3.75,-3.75,-3.75],660:[-.375,-.875,-2.75,-4,-4.75,-4.75,-4.75],640:[-.375,-1.375,-3.125,-4.625,-5.125,-5.125,-5.125],620:[-.375,-1.375,-3.375,-4.875,-5.125,-5.125,-5.125]};
   
-  const condoAdj = [0,0,-.125,-.125,-.75,-.75,-.75];
-  const invAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
-  const secAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
-  const mfgAdj = -.5;
-  const multiAdj = [0,0,-.375,-.375,-.625,-.625,-.625];
-  const subFinAdj = [-.625,-.625,-.625,-.875,-1.125,-1.125,-1.125];
+  var condoAdj = [0,0,-.125,-.125,-.75,-.75,-.75];
+  var invAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
+  var secAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
+  var mfgAdj = -.5;
+  var multiAdj = [0,0,-.375,-.375,-.625,-.625,-.625];
+  var subFinAdj = [-.625,-.625,-.625,-.875,-1.125,-1.125,-1.125];
   
   function getPayup(rate, state, occ, aus) {
-    let tbl = {};
+    var tbl = {};
     if (state === 'NY') {
       if (occ === 'inv') tbl = payups.nyI;
       else if (occ === 'sec') tbl = payups.nyS;
@@ -467,10 +477,10 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
       else return 0;
     }
     if (tbl[rate] !== undefined) return tbl[rate];
-    const rs = Object.keys(tbl).map(Number).sort((a,b) => a - b);
+    var rs = Object.keys(tbl).map(Number).sort(function(a, b) { return a - b; });
     if (rs.length === 0) return 0;
-    let cl = rs[0];
-    for (let i = 0; i < rs.length; i++) {
+    var cl = rs[0];
+    for (var i = 0; i < rs.length; i++) {
       if (Math.abs(rs[i] - rate) < Math.abs(cl - rate)) cl = rs[i];
     }
     return tbl[cl] || 0;
@@ -488,45 +498,45 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
   }
   
   function calcAdj(base, item) {
-    let adj = 0, bd = [];
-    const fico = parseInt(f.fico) || 0;
-    const ltv = parseFloat(f.ltv) || 0;
-    const loanAmt = parseFloat(f.loanAmt) || 0;
-    const ltvB = getLtvBucket(ltv);
-    const ficoB = getFicoBucket(fico);
-    const isConv = item.cat.indexOf('conv') > -1 || item.cat.indexOf('hb') > -1 || item.cat.indexOf('reno') > -1;
+    var adj = 0, bd = [];
+    var fico = parseInt(f.fico) || 0;
+    var ltv = parseFloat(f.ltv) || 0;
+    var loanAmt = parseFloat(f.loanAmt) || 0;
+    var ltvB = getLtvBucket(ltv);
+    var ficoB = getFicoBucket(fico);
+    var isConv = item.cat.indexOf('conv') > -1 || item.cat.indexOf('hb') > -1 || item.cat.indexOf('reno') > -1;
     
-    const waiverCheck = shouldWaiveLLPA(item);
-    const waiveLLPA = waiverCheck.waived && isConv;
-    const waiverReason = waiverCheck.reason;
+    var waiverCheck = shouldWaiveLLPA(item);
+    var waiveLLPA = waiverCheck.waived && isConv;
+    var waiverReason = waiverCheck.reason;
     
     if (waiveLLPA) {
       bd.push({l: '✨ LLPA WAIVED (' + waiverReason + ')', v: 0});
     } else {
       // FICO x LTV
       if (isConv && fico && ltv) {
-        let mx = f.purpose === 'purchase' ? ficoLtvPurch : f.purpose === 'cashout' ? ficoLtvCO : ficoLtvRefi;
+        var mx = f.purpose === 'purchase' ? ficoLtvPurch : f.purpose === 'cashout' ? ficoLtvCO : ficoLtvRefi;
         if (mx[ficoB]) {
-          let v = mx[ficoB][ltvB] || 0;
+          var v = mx[ficoB][ltvB] || 0;
           if (v !== 0) { adj += v; bd.push({l: 'FICO/LTV', v}); }
         }
       }
       // Property type
       if (isConv) {
-        if (f.prop === 'condo') { let v = condoAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l: 'Condo', v}); }}
+        if (f.prop === 'condo') { var v = condoAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l: 'Condo', v}); }}
         if (f.prop === 'mfg') { adj += mfgAdj; bd.push({l: 'Manufactured', v: mfgAdj}); }
-        if (parseInt(f.units) > 1) { let v = multiAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l: 'Multi-Unit', v}); }}
+        if (parseInt(f.units) > 1) { var v = multiAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l: 'Multi-Unit', v}); }}
       }
       // Occupancy
       if (isConv) {
-        if (f.occ === 'inv') { let v = invAdj[ltvB] || -1.125; adj += v; bd.push({l: 'Investment', v}); }
-        else if (f.occ === 'sec') { let v = secAdj[ltvB] || -1.125; adj += v; bd.push({l: 'Second Home', v}); }
+        if (f.occ === 'inv') { var v = invAdj[ltvB] || -1.125; adj += v; bd.push({l: 'Investment', v}); }
+        else if (f.occ === 'sec') { var v = secAdj[ltvB] || -1.125; adj += v; bd.push({l: 'Second Home', v}); }
       }
       // Subordinate financing
-      if (isConv && f.subFin) { let v = subFinAdj[ltvB] || -.625; adj += v; bd.push({l: 'Sub Fin', v}); }
+      if (isConv && f.subFin) { var v = subFinAdj[ltvB] || -.625; adj += v; bd.push({l: 'Sub Fin', v}); }
       // Loan amount
       if (isConv && loanAmt > 0) {
-        for (let i = 0; i < loanAdj.length; i++) {
+        for (var i = 0; i < loanAdj.length; i++) {
           if (loanAmt >= loanAdj[i].min && loanAmt <= loanAdj[i].max && loanAdj[i].val !== 0) {
             adj += loanAdj[i].val;
             bd.push({l: 'Loan Amt', v: loanAdj[i].val});
@@ -545,16 +555,16 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     if (isConv && sp.conv !== 0) { adj += sp.conv; bd.push({l: 'Conv Special', v: sp.conv}); }
     if ((item.cat === 'govt' || item.cat === 'govt-hb') && sp.govt !== 0) { adj += sp.govt; bd.push({l: 'Govt Special', v: sp.govt}); }
     if (isConv && fico > 740 && sp.fico740 !== 0 && !waiveLLPA) { adj += sp.fico740; bd.push({l: 'FICO>740', v: sp.fico740}); }
-    if (isConv && item.t === '30Y') { let v = getPayup(item.r, f.state, f.occ, f.aus); if (v !== 0) { adj += v; bd.push({l: 'Pay-Up', v}); }}
-    if (f.escrow && isConv) { let v = (f.state === 'CA' || f.state === 'NY') ? misc.escCANY : misc.escOther; if (v !== 0) { adj += v; bd.push({l: 'Escrow Waiver', v}); }}
+    if (isConv && item.t === '30Y') { var v = getPayup(item.r, f.state, f.occ, f.aus); if (v !== 0) { adj += v; bd.push({l: 'Pay-Up', v}); }}
+    if (f.escrow && isConv) { var v = (f.state === 'CA' || f.state === 'NY') ? misc.escCANY : misc.escOther; if (v !== 0) { adj += v; bd.push({l: 'Escrow Waiver', v}); }}
     
     return {adj, final: base + adj, bd, waived: waiveLLPA, waiverReason};
   }
   
   function getIncomeOptions() {
     if (!amiData) return null;
-    const hc = isHighCostArea(f.fips);
-    const threshold = hc ? amiData.a120 : amiData.a;
+    var hc = isHighCostArea(f.fips);
+    var threshold = hc ? amiData.a120 : amiData.a;
     return {
       low: amiData.a80,
       ami100: amiData.a,
@@ -572,10 +582,10 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     f.incomeLevel = '';
     amiData = null;
     
-    if (zip.length === 5 && /^\d{5}$/.test(zip)) {
-      const fips = zipLookup[zip];
+    if (zip.length === 5 && /^\\d{5}$/.test(zip)) {
+      var fips = zipLookup[zip];
       if (fips && allCounties[fips]) {
-        const [county, state] = allCounties[fips];
+        var countyData = allCounties[fips]; var county = countyData[0]; var state = countyData[1];
         f.state = state;
         f.county = county;
         f.fips = fips;
@@ -608,23 +618,23 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
   // ===========================================
   
   function getFilteredResults() {
-    const loanAmt = parseFloat(f.loanAmt) || 0;
-    const isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
-    const countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
+    var loanAmt = parseFloat(f.loanAmt) || 0;
+    var isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
+    var countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
     
-    return rates.filter(item => {
+    return rates.filter(function(item) { return  {; }
       // Hide refi products for purchase
       if (f.purpose === 'purchase' && item.refi) return false;
       
       // HomeReady/HomePossible: Only show if income <= 80% AMI
-      const isAmiProduct = item.cat.indexOf('-ami') > -1 || item.p === 'HomePoss' || item.p === 'HomeReady' || item.p === 'HR ARM';
+      var isAmiProduct = item.cat.indexOf('-ami') > -1 || item.p === 'HomePoss' || item.p === 'HomeReady' || item.p === 'HR ARM';
       if (isAmiProduct) {
         if (!f.incomeLevel) return false;
         if (f.incomeLevel !== 'low') return false;
       }
       
       // RefiNow / Refi Possible
-      const isRefiNowPossible = item.p === 'Refi Now' || item.p === 'Refi Poss';
+      var isRefiNowPossible = item.p === 'Refi Now' || item.p === 'Refi Poss';
       if (isRefiNowPossible) {
         if (f.purpose !== 'rateterm') return false;
         if (!f.incomeLevel) return false;
@@ -645,23 +655,23 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
       if (f.termFilter !== 'all' && item.t !== f.termFilter) return false;
       // Auto-filter HB products
       if (loanAmt > 0 && f.fips) {
-        const baseline = BASELINE[parseInt(f.units) || 1];
-        const cLimit = getCountyLimit(f.fips, f.units);
+        var baseline = BASELINE[parseInt(f.units) || 1];
+        var cLimit = getCountyLimit(f.fips, f.units);
         if (item.cat.indexOf('hb') > -1 && loanAmt <= baseline) return false;
         if (item.cat.indexOf('hb') === -1 && item.cat.indexOf('conv') > -1 && loanAmt > baseline && loanAmt <= cLimit) return false;
         if (loanAmt > cLimit && (item.cat.indexOf('conv') > -1 || item.cat.indexOf('hb') > -1)) return false;
       }
       return true;
-    }).map(item => {
-      const base = item['l' + f.lock] || item.l30;
-      const calc = calcAdj(base, item);
-      const afterComp = calc.final - f.comp;
-      const disc = loanAmt > 0 ? (100 - afterComp) * loanAmt / 100 : 0;
-      const months = item.t === '15Y' ? 180 : 360;
-      const mo = loanAmt > 0 ? (loanAmt * (item.r / 100 / 12) * Math.pow(1 + item.r / 100 / 12, months)) / (Math.pow(1 + item.r / 100 / 12, months) - 1) : 0;
-      const total = disc + (mo * months - loanAmt);
-      return {...item, base, calc, afterComp, disc, mo, total};
-    }).sort((a, b) => a.total - b.total);
+    }).map(function(item) { return  {; }
+      var base = item['l' + f.lock] || item.l30;
+      var calc = calcAdj(base, item);
+      var afterComp = calc.final - f.comp;
+      var disc = loanAmt > 0 ? (100 - afterComp) * loanAmt / 100 : 0;
+      var months = item.t === '15Y' ? 180 : 360;
+      var mo = loanAmt > 0 ? (loanAmt * (item.r / 100 / 12) * Math.pow(1 + item.r / 100 / 12, months)) / (Math.pow(1 + item.r / 100 / 12, months) - 1) : 0;
+      var total = disc + (mo * months - loanAmt);
+      return Object.assign({}, item, {base: base, calc: calc, afterComp: afterComp, disc: disc, mo: mo, total: total});
+    }).sort(function(a, b) { return a.total - b.total; });
   }
 
   // ===========================================
@@ -669,17 +679,17 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
   // ===========================================
   
   function render() {
-    const filtered = getFilteredResults();
-    const best = filtered.length > 0 && f.loanAmt ? filtered[0] : null;
-    const loanAmt = parseFloat(f.loanAmt) || 0;
-    const countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
-    const isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
-    const isJumbo = f.fips && loanAmt > countyLimit;
-    const llpaWaivedCheck = shouldWaiveLLPA(null);
-    const llpaWaived = llpaWaivedCheck.waived || (f.incomeLevel === 'low');
-    const incomeOpts = getIncomeOptions();
+    var filtered = getFilteredResults();
+    var best = filtered.length > 0 && f.loanAmt ? filtered[0] : null;
+    var loanAmt = parseFloat(f.loanAmt) || 0;
+    var countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
+    var isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
+    var isJumbo = f.fips && loanAmt > countyLimit;
+    var llpaWaivedCheck = shouldWaiveLLPA(null);
+    var llpaWaived = llpaWaivedCheck.waived || (f.incomeLevel === 'low');
+    var incomeOpts = getIncomeOptions();
     
-    let html = '';
+    var html = '';
     
     // Header
     html += '<div class="bg-white rounded-lg shadow-lg p-4 mb-4">';
@@ -743,7 +753,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     // Units
     html += '<div><label class="block font-medium mb-1">Units</label>';
     html += '<select id="units" onchange="updateField('units',this.value)" class="w-full p-2 border rounded">';
-    for (let u = 1; u <= 4; u++) {
+    for (var u = 1; u <= 4; u++) {
       html += '<option value="' + u + '"' + (f.units === '' + u ? ' selected' : '') + '>' + u + ' Unit' + (u > 1 ? 's' : '') + '</option>';
     }
     html += '</select></div>';
@@ -861,12 +871,12 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     if (f.loanAmt) html += '<th class="p-2">Cost/Credit</th><th class="p-2">P&I</th><th class="p-2">Total Cost</th>';
     html += '</tr></thead><tbody>';
     
-    filtered.slice(0, 50).forEach((item, i) => {
-      const isBest = best && item.r === best.r && item.p === best.p;
-      const rowClass = (isBest ? 'bg-yellow-50 border-2 border-yellow-400 ' : 'border-b hover:bg-gray-50 ') + 'cursor-pointer' + (item.calc.waived ? ' bg-green-50' : '');
+    filtered.slice(0, 50).forEachfunction((item, i) {
+      var isBest = best && item.r === best.r && item.p === best.p;
+      var rowClass = (isBest ? 'bg-yellow-50 border-2 border-yellow-400 ' : 'border-b hover:bg-gray-50 ') + 'cursor-pointer' + (item.calc.waived ? ' bg-green-50' : '');
       
       // Product badge class
-      let badgeClass = 'bg-green-100 text-green-800';
+      var badgeClass = 'bg-green-100 text-green-800';
       if (item.cat.indexOf('govt') > -1) badgeClass = 'bg-blue-100 text-blue-800';
       else if (item.cat.indexOf('hb') > -1) badgeClass = 'bg-purple-100 text-purple-800';
       else if (item.cat.indexOf('nqm') > -1) badgeClass = 'bg-red-100 text-red-800';
@@ -894,8 +904,8 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
       // Expandable details
       if (expanded[i] && item.calc.bd.length > 0) {
         html += '<tr class="bg-gray-50"><td colspan="9" class="p-2"><div class="grid grid-cols-2 md:grid-cols-4 gap-2">';
-        item.calc.bd.forEach(a => {
-          const adjClass = a.l.indexOf('WAIVED') > -1 ? 'bg-green-100 border-green-300' : 'bg-white';
+        item.calc.bd.forEach(function(a) { return  {; }
+          var adjClass = a.l.indexOf('WAIVED') > -1 ? 'bg-green-100 border-green-300' : 'bg-white';
           html += '<div class="flex justify-between p-1 rounded border text-xs ' + adjClass + '"><span>' + a.l + '</span><span class="' + (a.v >= 0 ? 'text-green-600' : 'text-red-600') + '">' + (a.v >= 0 ? '+' : '') + a.v.toFixed(3) + '</span></div>';
         });
         html += '<div class="flex justify-between bg-white p-1 rounded border text-xs"><span>Broker Comp</span><span class="text-red-600">-' + f.comp.toFixed(3) + '</span></div>';
