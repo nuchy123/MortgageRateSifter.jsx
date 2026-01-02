@@ -373,577 +373,407 @@ Object.assign(RATEDATA.zipLookup,{"99256": "53063", "99258": "53063", "99260": "
 Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "02130", "99929": "02275", "99950": "02198"});
 </script>
 <script>
-// ===========================================
-// VANILLA JS MORTGAGE CALCULATOR
-// ===========================================
-
 (function() {
-  var rates = window.RATEDATA.rates;
-  var sp = window.RATEDATA.sp;
-  var stAdj = window.RATEDATA.stAdj;
-  var loanAdj = window.RATEDATA.loanAdj;
-  var misc = window.RATEDATA.misc;
-  var payups = window.RATEDATA.payups;
-  var highCostCounties = window.RATEDATA.highCostCounties;
-  var allCounties = window.RATEDATA.allCounties;
-  var BASELINE = window.RATEDATA.BASELINE;
-  var amiLookup = window.RATEDATA.amiLookup;
-  var zipLookup = window.RATEDATA.zipLookup;
-  var effectiveDate = window.RATEDATA.effectiveDate;
-  
-  // Form state
-  var f = {
-    zip:'',state:'',county:'',city:'',fips:'',
-    fico:'',ltv:'',loanAmt:'',price:'',
-    occ:'primary',prop:'sf',units:'1',purpose:'purchase',lock:'30',
-    escrow:false,subFin:false,aus:'LP',comp:2.5,
-    prodFilter:'all',catFilter:'all',termFilter:'all',
-    incomeLevel:'',firstTimeBuyer:'no'
-  };
-  var amiData = null;
-  var expanded = {};
-  
-  // DOM Elements
-  var app = document.getElementById('app');
-  
-  // ===========================================
-  // HELPER FUNCTIONS
-  // ===========================================
-  
-  function getCountyLimit(fips, units) {
-    var u = parseInt(units) || 1;
-    if (highCostCounties[fips]) return highCostCounties[fips].l[u-1];
-    return BASELINE[u];
+"use strict";
+
+var rates = window.RATEDATA.rates || [];
+var sp = window.RATEDATA.sp || {conv:0,govt:0,fico740:0};
+var stAdj = window.RATEDATA.stAdj || {};
+var loanAdj = window.RATEDATA.loanAdj || [];
+var misc = window.RATEDATA.misc || {escOther:-0.125,escCANY:0};
+var payups = window.RATEDATA.payups || {};
+var highCostCounties = window.RATEDATA.highCostCounties || {};
+var allCounties = window.RATEDATA.allCounties || {};
+var BASELINE = window.RATEDATA.BASELINE || {1:832750,2:1066250,3:1288800,4:1601750};
+var amiLookup = window.RATEDATA.amiLookup || {};
+var zipLookup = window.RATEDATA.zipLookup || {};
+var effectiveDate = window.RATEDATA.effectiveDate || "Unknown";
+
+var F = {
+  zip:"", state:"", county:"", fips:"",
+  fico:"", ltv:"", loanAmt:"", price:"",
+  occ:"primary", prop:"sf", units:"1", purpose:"purchase", lock:"30",
+  escrow:false, subFin:false, aus:"LP", comp:2.5,
+  prodFilter:"all", catFilter:"all", termFilter:"all",
+  incomeLevel:"", firstTimeBuyer:"no"
+};
+var amiData = null;
+var expanded = {};
+var appEl = document.getElementById("app");
+
+function getCountyLimit(fips, units) {
+  var u = parseInt(units) || 1;
+  if (highCostCounties[fips]) return highCostCounties[fips].l[u-1];
+  return BASELINE[u];
+}
+
+function isHighCostArea(fips) { return !!highCostCounties[fips]; }
+
+function isHighBalance(amt, fips, units) {
+  var u = parseInt(units) || 1;
+  return amt > BASELINE[u] && amt <= getCountyLimit(fips, units);
+}
+
+function getLtvBucket(ltv) {
+  if (ltv <= 60) return 0; if (ltv <= 70) return 1; if (ltv <= 75) return 2;
+  if (ltv <= 80) return 3; if (ltv <= 85) return 4; if (ltv <= 90) return 5; return 6;
+}
+
+function getFicoBucket(fico) {
+  if (fico >= 780) return 780; if (fico >= 760) return 760; if (fico >= 740) return 740;
+  if (fico >= 720) return 720; if (fico >= 700) return 700; if (fico >= 680) return 680;
+  if (fico >= 660) return 660; if (fico >= 640) return 640; return 620;
+}
+
+var ficoLtvPurch = {
+  780:[0,0,0,0,-0.375,-0.375,-0.25], 760:[0,0,0,-0.25,-0.625,-0.625,-0.5],
+  740:[0,0,-0.125,-0.375,-0.875,-1,-0.75], 720:[0,0,-0.25,-0.75,-1.25,-1.25,-1],
+  700:[0,0,-0.375,-0.875,-1.375,-1.5,-1.25], 680:[0,0,-0.625,-1.125,-1.75,-1.875,-1.5],
+  660:[0,0,-0.75,-1.375,-1.875,-2.125,-1.75], 640:[0,0,-1.125,-1.5,-2.25,-2.5,-2],
+  620:[0,-0.125,-1.5,-2.125,-2.75,-2.875,-2.625]
+};
+var ficoLtvRefi = {
+  780:[0,0,0,-0.125,-0.5,-0.625,-0.5], 760:[0,0,-0.125,-0.375,-0.875,-1,-0.75],
+  740:[0,0,-0.25,-0.75,-1.125,-1.375,-1.125], 720:[0,0,-0.5,-1,-1.625,-1.75,-1.5],
+  700:[0,0,-0.625,-1.25,-1.875,-2.125,-1.75], 680:[0,0,-0.875,-1.625,-2.25,-2.5,-2.125],
+  660:[0,-0.125,-1.125,-1.875,-2.5,-3,-2.375], 640:[0,-0.25,-1.375,-2.125,-2.875,-3.375,-2.875],
+  620:[0,-0.375,-1.75,-2.5,-3.5,-3.875,-3.625]
+};
+var ficoLtvCO = {
+  780:[-0.375,-0.375,-0.625,-0.875,-1.375,-1.375,-1.375],
+  760:[-0.375,-0.375,-0.875,-1.25,-1.875,-1.875,-1.875],
+  740:[-0.375,-0.375,-1,-1.625,-2.375,-2.375,-2.375],
+  720:[-0.375,-0.5,-1.375,-2,-2.75,-2.75,-2.75],
+  700:[-0.375,-0.5,-1.625,-2.625,-3.25,-3.25,-3.25],
+  680:[-0.375,-0.625,-2,-2.875,-3.75,-3.75,-3.75],
+  660:[-0.375,-0.875,-2.75,-4,-4.75,-4.75,-4.75],
+  640:[-0.375,-1.375,-3.125,-4.625,-5.125,-5.125,-5.125],
+  620:[-0.375,-1.375,-3.375,-4.875,-5.125,-5.125,-5.125]
+};
+
+var condoAdj = [0,0,-0.125,-0.125,-0.75,-0.75,-0.75];
+var invAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
+var secAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
+var mfgAdj = -0.5;
+var multiAdj = [0,0,-0.375,-0.375,-0.625,-0.625,-0.625];
+var subFinAdj = [-0.625,-0.625,-0.625,-0.875,-1.125,-1.125,-1.125];
+
+function getPayup(rate, state, occ, aus) {
+  var tbl = {};
+  if (state === "NY") { tbl = occ === "inv" ? payups.nyI : occ === "sec" ? payups.nyS : payups.nyP; }
+  else if (state === "FL") { tbl = occ === "inv" ? (aus === "DU" ? payups.flID : payups.flIL) : occ === "sec" ? (aus === "DU" ? payups.flSD : payups.flSL) : payups.flPL; }
+  else { tbl = occ === "inv" ? payups.invO : occ === "sec" ? payups.secO : {}; }
+  if (!tbl) return 0;
+  if (tbl[rate] !== undefined) return tbl[rate];
+  var keys = Object.keys(tbl).map(Number).sort(function(a,b){return a-b;});
+  if (keys.length === 0) return 0;
+  var closest = keys[0];
+  for (var i = 0; i < keys.length; i++) { if (Math.abs(keys[i] - rate) < Math.abs(closest - rate)) closest = keys[i]; }
+  return tbl[closest] || 0;
+}
+
+function shouldWaiveLLPA(item) {
+  if (item && (item.p === "HomeReady" || item.p === "HR ARM" || item.p === "HomePoss")) return {waived:true, reason:item.p};
+  if (F.firstTimeBuyer === "yes" && (F.incomeLevel === "low" || F.incomeLevel === "mid100" || F.incomeLevel === "mid120")) {
+    return {waived:true, reason:"First-Time Buyer"};
   }
+  return {waived:false, reason:null};
+}
+
+function calcAdj(base, item) {
+  var adj = 0, bd = [];
+  var fico = parseInt(F.fico) || 0, ltv = parseFloat(F.ltv) || 0, loanAmt = parseFloat(F.loanAmt) || 0;
+  var ltvB = getLtvBucket(ltv), ficoB = getFicoBucket(fico);
+  var isConv = item.cat && (item.cat.indexOf("conv") > -1 || item.cat.indexOf("hb") > -1 || item.cat.indexOf("reno") > -1);
+  var wCheck = shouldWaiveLLPA(item);
+  var waive = wCheck.waived && isConv;
   
-  function isHighCostArea(fips) {
-    return !!highCostCounties[fips];
-  }
-  
-  function isHighBalance(loanAmt, fips, units) {
-    var u = parseInt(units) || 1;
-    var baseline = BASELINE[u];
-    var countyLimit = getCountyLimit(fips, units);
-    return loanAmt > baseline && loanAmt <= countyLimit;
-  }
-  
-  function getLtvBucket(ltv) {
-    if (ltv <= 60) return 0;
-    if (ltv <= 70) return 1;
-    if (ltv <= 75) return 2;
-    if (ltv <= 80) return 3;
-    if (ltv <= 85) return 4;
-    if (ltv <= 90) return 5;
-    return 6;
-  }
-  
-  function getFicoBucket(fico) {
-    if (fico >= 780) return 780;
-    if (fico >= 760) return 760;
-    if (fico >= 740) return 740;
-    if (fico >= 720) return 720;
-    if (fico >= 700) return 700;
-    if (fico >= 680) return 680;
-    if (fico >= 660) return 660;
-    if (fico >= 640) return 640;
-    return 620;
-  }
-  
-  // FICO x LTV Matrices
-  var ficoLtvPurch = {780:[0,0,0,0,-.375,-.375,-.25],760:[0,0,0,-.25,-.625,-.625,-.5],740:[0,0,-.125,-.375,-.875,-1,-.75],720:[0,0,-.25,-.75,-1.25,-1.25,-1],700:[0,0,-.375,-.875,-1.375,-1.5,-1.25],680:[0,0,-.625,-1.125,-1.75,-1.875,-1.5],660:[0,0,-.75,-1.375,-1.875,-2.125,-1.75],640:[0,0,-1.125,-1.5,-2.25,-2.5,-2],620:[0,-.125,-1.5,-2.125,-2.75,-2.875,-2.625]};
-  var ficoLtvRefi = {780:[0,0,0,-.125,-.5,-.625,-.5],760:[0,0,-.125,-.375,-.875,-1,-.75],740:[0,0,-.25,-.75,-1.125,-1.375,-1.125],720:[0,0,-.5,-1,-1.625,-1.75,-1.5],700:[0,0,-.625,-1.25,-1.875,-2.125,-1.75],680:[0,0,-.875,-1.625,-2.25,-2.5,-2.125],660:[0,-.125,-1.125,-1.875,-2.5,-3,-2.375],640:[0,-.25,-1.375,-2.125,-2.875,-3.375,-2.875],620:[0,-.375,-1.75,-2.5,-3.5,-3.875,-3.625]};
-  var ficoLtvCO = {780:[-.375,-.375,-.625,-.875,-1.375,-1.375,-1.375],760:[-.375,-.375,-.875,-1.25,-1.875,-1.875,-1.875],740:[-.375,-.375,-1,-1.625,-2.375,-2.375,-2.375],720:[-.375,-.5,-1.375,-2,-2.75,-2.75,-2.75],700:[-.375,-.5,-1.625,-2.625,-3.25,-3.25,-3.25],680:[-.375,-.625,-2,-2.875,-3.75,-3.75,-3.75],660:[-.375,-.875,-2.75,-4,-4.75,-4.75,-4.75],640:[-.375,-1.375,-3.125,-4.625,-5.125,-5.125,-5.125],620:[-.375,-1.375,-3.375,-4.875,-5.125,-5.125,-5.125]};
-  
-  var condoAdj = [0,0,-.125,-.125,-.75,-.75,-.75];
-  var invAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
-  var secAdj = [-1.125,-1.125,-1.625,-2.125,-3.375,-4.125,-4.125];
-  var mfgAdj = -.5;
-  var multiAdj = [0,0,-.375,-.375,-.625,-.625,-.625];
-  var subFinAdj = [-.625,-.625,-.625,-.875,-1.125,-1.125,-1.125];
-  
-  function getPayup(rate, state, occ, aus) {
-    var tbl = {};
-    if (state === 'NY') {
-      if (occ === 'inv') tbl = payups.nyI;
-      else if (occ === 'sec') tbl = payups.nyS;
-      else tbl = payups.nyP;
-    } else if (state === 'FL') {
-      if (occ === 'inv') tbl = aus === 'DU' ? payups.flID : payups.flIL;
-      else if (occ === 'sec') tbl = aus === 'DU' ? payups.flSD : payups.flSL;
-      else tbl = payups.flPL;
-    } else {
-      if (occ === 'inv') tbl = payups.invO;
-      else if (occ === 'sec') tbl = payups.secO;
-      else return 0;
+  if (waive) { bd.push({l:"LLPA WAIVED",v:0}); }
+  else {
+    if (isConv && fico && ltv) {
+      var mx = F.purpose === "purchase" ? ficoLtvPurch : F.purpose === "cashout" ? ficoLtvCO : ficoLtvRefi;
+      if (mx[ficoB]) { var v = mx[ficoB][ltvB] || 0; if (v !== 0) { adj += v; bd.push({l:"FICO/LTV",v:v}); } }
     }
-    if (tbl[rate] !== undefined) return tbl[rate];
-    var rs = Object.keys(tbl).map(Number).sort(function(a, b) { return a - b; });
-    if (rs.length === 0) return 0;
-    var cl = rs[0];
-    for (var i = 0; i < rs.length; i++) {
-      if (Math.abs(rs[i] - rate) < Math.abs(cl - rate)) cl = rs[i];
-    }
-    return tbl[cl] || 0;
-  }
-  
-  function shouldWaiveLLPA(item) {
-    if (item && (item.p === 'HomeReady' || item.p === 'HR ARM')) return {waived: true, reason: 'HomeReady'};
-    if (item && item.p === 'HomePoss') return {waived: true, reason: 'HomePossible'};
-    if (f.firstTimeBuyer === 'yes') {
-      if (f.incomeLevel === 'low' || f.incomeLevel === 'mid100' || f.incomeLevel === 'mid120') {
-        return {waived: true, reason: 'First-Time Buyer ≤' + ((f.incomeLevel === 'mid120') ? '120' : '100') + '% AMI'};
-      }
-    }
-    return {waived: false, reason: null};
-  }
-  
-  function calcAdj(base, item) {
-    var adj = 0, bd = [];
-    var fico = parseInt(f.fico) || 0;
-    var ltv = parseFloat(f.ltv) || 0;
-    var loanAmt = parseFloat(f.loanAmt) || 0;
-    var ltvB = getLtvBucket(ltv);
-    var ficoB = getFicoBucket(fico);
-    var isConv = item.cat.indexOf('conv') > -1 || item.cat.indexOf('hb') > -1 || item.cat.indexOf('reno') > -1;
-    
-    var waiverCheck = shouldWaiveLLPA(item);
-    var waiveLLPA = waiverCheck.waived && isConv;
-    var waiverReason = waiverCheck.reason;
-    
-    if (waiveLLPA) {
-      bd.push({l: '✨ LLPA WAIVED (' + waiverReason + ')', v: 0});
-    } else {
-      // FICO x LTV
-      if (isConv && fico && ltv) {
-        var mx = f.purpose === 'purchase' ? ficoLtvPurch : f.purpose === 'cashout' ? ficoLtvCO : ficoLtvRefi;
-        if (mx[ficoB]) {
-          var v = mx[ficoB][ltvB] || 0;
-          if (v !== 0) { adj += v; bd.push({l: 'FICO/LTV', v}); }
-        }
-      }
-      // Property type
-      if (isConv) {
-        if (f.prop === 'condo') { var v = condoAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l: 'Condo', v}); }}
-        if (f.prop === 'mfg') { adj += mfgAdj; bd.push({l: 'Manufactured', v: mfgAdj}); }
-        if (parseInt(f.units) > 1) { var v = multiAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l: 'Multi-Unit', v}); }}
-      }
-      // Occupancy
-      if (isConv) {
-        if (f.occ === 'inv') { var v = invAdj[ltvB] || -1.125; adj += v; bd.push({l: 'Investment', v}); }
-        else if (f.occ === 'sec') { var v = secAdj[ltvB] || -1.125; adj += v; bd.push({l: 'Second Home', v}); }
-      }
-      // Subordinate financing
-      if (isConv && f.subFin) { var v = subFinAdj[ltvB] || -.625; adj += v; bd.push({l: 'Sub Fin', v}); }
-      // Loan amount
-      if (isConv && loanAmt > 0) {
+    if (isConv) {
+      if (F.prop === "condo") { var v = condoAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l:"Condo",v:v}); } }
+      if (F.prop === "mfg") { adj += mfgAdj; bd.push({l:"Mfg",v:mfgAdj}); }
+      if (parseInt(F.units) > 1) { var v = multiAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l:"Multi",v:v}); } }
+      if (F.occ === "inv") { var v = invAdj[ltvB] || -1.125; adj += v; bd.push({l:"Inv",v:v}); }
+      else if (F.occ === "sec") { var v = secAdj[ltvB] || -1.125; adj += v; bd.push({l:"2nd",v:v}); }
+      if (F.subFin) { var v = subFinAdj[ltvB] || -0.625; adj += v; bd.push({l:"SubFin",v:v}); }
+      if (loanAmt > 0) {
         for (var i = 0; i < loanAdj.length; i++) {
           if (loanAmt >= loanAdj[i].min && loanAmt <= loanAdj[i].max && loanAdj[i].val !== 0) {
-            adj += loanAdj[i].val;
-            bd.push({l: 'Loan Amt', v: loanAdj[i].val});
-            break;
+            adj += loanAdj[i].val; bd.push({l:"LoanAmt",v:loanAdj[i].val}); break;
           }
         }
       }
-      // State adj
-      if (isConv && f.state && stAdj[f.state] && stAdj[f.state] !== 0) {
-        adj += stAdj[f.state];
-        bd.push({l: 'State (' + f.state + ')', v: stAdj[f.state]});
-      }
+      if (F.state && stAdj[F.state] && stAdj[F.state] !== 0) { adj += stAdj[F.state]; bd.push({l:"State",v:stAdj[F.state]}); }
     }
-    
-    // These always apply even with waiver
-    if (isConv && sp.conv !== 0) { adj += sp.conv; bd.push({l: 'Conv Special', v: sp.conv}); }
-    if ((item.cat === 'govt' || item.cat === 'govt-hb') && sp.govt !== 0) { adj += sp.govt; bd.push({l: 'Govt Special', v: sp.govt}); }
-    if (isConv && fico > 740 && sp.fico740 !== 0 && !waiveLLPA) { adj += sp.fico740; bd.push({l: 'FICO>740', v: sp.fico740}); }
-    if (isConv && item.t === '30Y') { var v = getPayup(item.r, f.state, f.occ, f.aus); if (v !== 0) { adj += v; bd.push({l: 'Pay-Up', v}); }}
-    if (f.escrow && isConv) { var v = (f.state === 'CA' || f.state === 'NY') ? misc.escCANY : misc.escOther; if (v !== 0) { adj += v; bd.push({l: 'Escrow Waiver', v}); }}
-    
-    return {adj, final: base + adj, bd, waived: waiveLLPA, waiverReason};
+  }
+  // Always apply
+  if (isConv && sp.conv !== 0) { adj += sp.conv; bd.push({l:"Special",v:sp.conv}); }
+  if ((item.cat === "govt" || item.cat === "govt-hb") && sp.govt !== 0) { adj += sp.govt; bd.push({l:"GovtSpec",v:sp.govt}); }
+  if (isConv && fico > 740 && sp.fico740 !== 0 && !waive) { adj += sp.fico740; bd.push({l:"FICO740",v:sp.fico740}); }
+  if (isConv && item.t === "30Y") { var pv = getPayup(item.r, F.state, F.occ, F.aus); if (pv !== 0) { adj += pv; bd.push({l:"PayUp",v:pv}); } }
+  if (F.escrow && isConv) { var ev = (F.state === "CA" || F.state === "NY") ? misc.escCANY : misc.escOther; if (ev !== 0) { adj += ev; bd.push({l:"Escrow",v:ev}); } }
+  return {adj:adj, final:base+adj, bd:bd, waived:waive};
+}
+
+function getResults() {
+  var loanAmt = parseFloat(F.loanAmt) || 0;
+  var results = [];
+  for (var i = 0; i < rates.length; i++) {
+    var item = rates[i];
+    if (!item || !item.cat) continue;
+    if (F.purpose === "purchase" && item.refi) continue;
+    var isAmi = item.cat.indexOf("-ami") > -1 || item.p === "HomePoss" || item.p === "HomeReady" || item.p === "HR ARM";
+    if (isAmi && (!F.incomeLevel || F.incomeLevel !== "low")) continue;
+    var isRefiProd = item.p === "Refi Now" || item.p === "Refi Poss";
+    if (isRefiProd && (F.purpose !== "rateterm" || !F.incomeLevel || (F.incomeLevel !== "low" && F.incomeLevel !== "mid100"))) continue;
+    if (F.prodFilter !== "all" && item.p !== F.prodFilter) continue;
+    if (F.catFilter !== "all") {
+      if (F.catFilter === "govt" && item.cat.indexOf("govt") === -1) continue;
+      if (F.catFilter === "conv" && item.cat.indexOf("conv") === -1 && item.cat.indexOf("hb") === -1) continue;
+      if (F.catFilter === "hb" && item.cat.indexOf("hb") === -1) continue;
+      if (F.catFilter === "reno" && item.cat.indexOf("reno") === -1) continue;
+      if (F.catFilter === "nqm" && item.cat.indexOf("nqm") === -1) continue;
+    }
+    if (F.termFilter !== "all" && item.t !== F.termFilter) continue;
+    if (loanAmt > 0 && F.fips) {
+      var base = BASELINE[parseInt(F.units) || 1];
+      var limit = getCountyLimit(F.fips, F.units);
+      if (item.cat.indexOf("hb") > -1 && loanAmt <= base) continue;
+      if (item.cat.indexOf("hb") === -1 && item.cat.indexOf("conv") > -1 && loanAmt > base && loanAmt <= limit) continue;
+      if (loanAmt > limit && (item.cat.indexOf("conv") > -1 || item.cat.indexOf("hb") > -1)) continue;
+    }
+    var basePrice = item["l" + F.lock] || item.l30;
+    var calc = calcAdj(basePrice, item);
+    var afterComp = calc.final - F.comp;
+    var disc = loanAmt > 0 ? (100 - afterComp) * loanAmt / 100 : 0;
+    var months = item.t === "15Y" ? 180 : 360;
+    var mr = item.r / 100 / 12;
+    var mo = loanAmt > 0 ? (loanAmt * mr * Math.pow(1 + mr, months)) / (Math.pow(1 + mr, months) - 1) : 0;
+    var total = disc + (mo * months - loanAmt);
+    results.push({p:item.p, t:item.t, cat:item.cat, r:item.r, base:basePrice, calc:calc, afterComp:afterComp, disc:disc, mo:mo, total:total});
+  }
+  results.sort(function(a,b){return a.total - b.total;});
+  return results;
+}
+
+function doZip(zip) {
+  F.zip = zip; F.incomeLevel = ""; amiData = null;
+  if (zip.length === 5 && /^[0-9]{5}$/.test(zip) && zipLookup[zip]) {
+    var fips = zipLookup[zip];
+    if (allCounties[fips]) {
+      F.state = allCounties[fips][1]; F.county = allCounties[fips][0]; F.fips = fips;
+      if (amiLookup[fips]) amiData = amiLookup[fips];
+    }
+  } else { F.state = ""; F.county = ""; F.fips = ""; }
+  render();
+}
+
+function doPrice(v) {
+  F.price = v;
+  if (v && F.ltv) F.loanAmt = Math.round(parseFloat(v) * parseFloat(F.ltv) / 100);
+  render();
+}
+
+function doLtv(v) {
+  F.ltv = v;
+  if (v && F.price) F.loanAmt = Math.round(parseFloat(F.price) * parseFloat(v) / 100);
+  render();
+}
+
+function render() {
+  var filtered = getResults();
+  var loanAmt = parseFloat(F.loanAmt) || 0;
+  var limit = F.fips ? getCountyLimit(F.fips, F.units) : BASELINE[parseInt(F.units) || 1];
+  var hb = F.fips ? isHighBalance(loanAmt, F.fips, F.units) : false;
+  var jumbo = F.fips && loanAmt > limit;
+  var best = filtered.length > 0 && loanAmt ? filtered[0] : null;
+  
+  var h = "";
+  
+  h += '<div class="bg-white rounded-lg shadow-lg p-4 mb-4">';
+  h += '<h1 class="text-xl font-bold text-indigo-800">TPO Go Rate Calculator</h1>';
+  h += '<p class="text-sm text-gray-600">Effective: ' + effectiveDate + '</p>';
+  if (F.fips) {
+    h += '<p class="text-xs mt-1">' + F.county + ', ' + F.state + ' | Limit: $' + limit.toLocaleString();
+    if (jumbo) h += ' | <span class="text-red-600 font-bold">JUMBO</span>';
+    else if (hb) h += ' | <span class="text-purple-600 font-bold">HIGH BALANCE</span>';
+    else h += ' | <span class="text-green-600 font-bold">CONFORMING</span>';
+    h += '</p>';
+  }
+  h += '</div>';
+  
+  h += '<div class="bg-white rounded-lg shadow-lg p-4 mb-4"><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">';
+  h += '<div><label class="block font-medium mb-1">ZIP</label><input id="zip" value="' + F.zip + '" maxlength="5" class="w-full p-2 border rounded"/></div>';
+  h += '<div><label class="block font-medium mb-1">State</label><input value="' + F.state + '" readonly class="w-full p-2 border rounded bg-gray-50"/></div>';
+  h += '<div><label class="block font-medium mb-1">County</label><input value="' + F.county + '" readonly class="w-full p-2 border rounded bg-gray-50"/></div>';
+  h += '<div><label class="block font-medium mb-1">FICO</label><input id="fico" type="number" value="' + F.fico + '" class="w-full p-2 border rounded"/></div>';
+  h += '<div><label class="block font-medium mb-1">Price</label><input id="price" type="number" value="' + F.price + '" class="w-full p-2 border rounded"/></div>';
+  h += '<div><label class="block font-medium mb-1">LTV %</label><input id="ltv" type="number" value="' + F.ltv + '" class="w-full p-2 border rounded"/></div>';
+  h += '<div><label class="block font-medium mb-1">Loan Amt</label><input id="loanAmt" type="number" value="' + F.loanAmt + '" class="w-full p-2 border rounded"/></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Purpose</label><select id="purpose" class="w-full p-2 border rounded">';
+  h += '<option value="purchase"' + (F.purpose==="purchase"?" selected":"") + '>Purchase</option>';
+  h += '<option value="rateterm"' + (F.purpose==="rateterm"?" selected":"") + '>Rate/Term</option>';
+  h += '<option value="cashout"' + (F.purpose==="cashout"?" selected":"") + '>Cash-Out</option></select></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Units</label><select id="units" class="w-full p-2 border rounded">';
+  h += '<option value="1"' + (F.units==="1"?" selected":"") + '>1</option>';
+  h += '<option value="2"' + (F.units==="2"?" selected":"") + '>2</option>';
+  h += '<option value="3"' + (F.units==="3"?" selected":"") + '>3</option>';
+  h += '<option value="4"' + (F.units==="4"?" selected":"") + '>4</option></select></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Property</label><select id="prop" class="w-full p-2 border rounded">';
+  h += '<option value="sf"' + (F.prop==="sf"?" selected":"") + '>SFR</option>';
+  h += '<option value="condo"' + (F.prop==="condo"?" selected":"") + '>Condo</option>';
+  h += '<option value="mfg"' + (F.prop==="mfg"?" selected":"") + '>Mfg</option></select></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Occupancy</label><select id="occ" class="w-full p-2 border rounded">';
+  h += '<option value="primary"' + (F.occ==="primary"?" selected":"") + '>Primary</option>';
+  h += '<option value="sec"' + (F.occ==="sec"?" selected":"") + '>2nd Home</option>';
+  h += '<option value="inv"' + (F.occ==="inv"?" selected":"") + '>Investment</option></select></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Lock</label><select id="lock" class="w-full p-2 border rounded">';
+  h += '<option value="15"' + (F.lock==="15"?" selected":"") + '>15</option>';
+  h += '<option value="30"' + (F.lock==="30"?" selected":"") + '>30</option>';
+  h += '<option value="45"' + (F.lock==="45"?" selected":"") + '>45</option>';
+  h += '<option value="60"' + (F.lock==="60"?" selected":"") + '>60</option></select></div>';
+  
+  if (amiData) {
+    var hc = isHighCostArea(F.fips);
+    h += '<div class="col-span-2"><label class="block font-medium mb-1 text-indigo-700">Income</label><select id="income" class="w-full p-2 border-2 border-indigo-300 rounded">';
+    h += '<option value=""' + (F.incomeLevel===""?" selected":"") + '>-- Select --</option>';
+    h += '<option value="low"' + (F.incomeLevel==="low"?" selected":"") + '>≤$' + amiData.a80.toLocaleString() + ' (80%)</option>';
+    h += '<option value="mid100"' + (F.incomeLevel==="mid100"?" selected":"") + '>$' + amiData.a80.toLocaleString() + '-$' + amiData.a.toLocaleString() + '</option>';
+    if (hc) h += '<option value="mid120"' + (F.incomeLevel==="mid120"?" selected":"") + '>$' + amiData.a.toLocaleString() + '-$' + amiData.a120.toLocaleString() + '</option>';
+    h += '<option value="high"' + (F.incomeLevel==="high"?" selected":"") + '>>$' + (hc?amiData.a120:amiData.a).toLocaleString() + '</option></select></div>';
   }
   
-  function getIncomeOptions() {
-    if (!amiData) return null;
-    var hc = isHighCostArea(f.fips);
-    var threshold = hc ? amiData.a120 : amiData.a;
-    return {
-      low: amiData.a80,
-      ami100: amiData.a,
-      mid: threshold,
-      highCost: hc
+  if (F.incomeLevel === "mid100" || F.incomeLevel === "mid120") {
+    h += '<div><label class="block font-medium mb-1">First-Time?</label><select id="ftb" class="w-full p-2 border rounded">';
+    h += '<option value="no"' + (F.firstTimeBuyer==="no"?" selected":"") + '>No</option>';
+    h += '<option value="yes"' + (F.firstTimeBuyer==="yes"?" selected":"") + '>Yes</option></select></div>';
+  }
+  
+  h += '<div><label class="block font-medium mb-1">Comp %</label><input id="comp" type="number" step="0.125" value="' + F.comp + '" class="w-full p-2 border rounded"/></div>';
+  h += '<div><label class="block font-medium mb-1">AUS</label><select id="aus" class="w-full p-2 border rounded">';
+  h += '<option value="LP"' + (F.aus==="LP"?" selected":"") + '>LP</option>';
+  h += '<option value="DU"' + (F.aus==="DU"?" selected":"") + '>DU</option></select></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Category</label><select id="catFilter" class="w-full p-2 border rounded">';
+  h += '<option value="all"' + (F.catFilter==="all"?" selected":"") + '>All</option>';
+  h += '<option value="govt"' + (F.catFilter==="govt"?" selected":"") + '>Govt</option>';
+  h += '<option value="conv"' + (F.catFilter==="conv"?" selected":"") + '>Conv</option>';
+  h += '<option value="hb"' + (F.catFilter==="hb"?" selected":"") + '>HB</option>';
+  h += '<option value="nqm"' + (F.catFilter==="nqm"?" selected":"") + '>NQM</option></select></div>';
+  
+  h += '<div><label class="block font-medium mb-1">Term</label><select id="termFilter" class="w-full p-2 border rounded">';
+  h += '<option value="all"' + (F.termFilter==="all"?" selected":"") + '>All</option>';
+  h += '<option value="30Y"' + (F.termFilter==="30Y"?" selected":"") + '>30Y</option>';
+  h += '<option value="15Y"' + (F.termFilter==="15Y"?" selected":"") + '>15Y</option>';
+  h += '<option value="ARM"' + (F.termFilter==="ARM"?" selected":"") + '>ARM</option></select></div>';
+  
+  h += '<div class="flex items-center pt-6"><input type="checkbox" id="escrow"' + (F.escrow?" checked":"") + ' class="mr-2"/><label>Escrow</label></div>';
+  h += '<div class="flex items-center pt-6"><input type="checkbox" id="subFin"' + (F.subFin?" checked":"") + ' class="mr-2"/><label>SubFin</label></div>';
+  h += '</div></div>';
+  
+  h += '<div class="bg-white rounded-lg shadow-lg p-4"><h2 class="font-semibold mb-2">Results (' + filtered.length + ')</h2>';
+  if (jumbo) h += '<div class="bg-red-100 text-red-700 p-2 rounded mb-2">Jumbo - not available</div>';
+  h += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-indigo-50"><tr>';
+  h += '<th class="p-2 text-left">Product</th><th class="p-2">Term</th><th class="p-2">Rate</th><th class="p-2">Base</th><th class="p-2">Adj</th><th class="p-2">Final</th>';
+  if (loanAmt) h += '<th class="p-2">Cost</th><th class="p-2">P&I</th><th class="p-2">Total</th>';
+  h += '</tr></thead><tbody>';
+  
+  var max = Math.min(filtered.length, 50);
+  for (var i = 0; i < max; i++) {
+    var it = filtered[i];
+    var isBest = best && it.r === best.r && it.p === best.p;
+    var cls = isBest ? "bg-yellow-50 border-2 border-yellow-400" : "border-b hover:bg-gray-50";
+    if (it.calc.waived) cls += " bg-green-50";
+    var badge = "bg-green-100 text-green-800";
+    if (it.cat && it.cat.indexOf("govt") > -1) badge = "bg-blue-100 text-blue-800";
+    else if (it.cat && it.cat.indexOf("hb") > -1) badge = "bg-purple-100 text-purple-800";
+    else if (it.cat && it.cat.indexOf("nqm") > -1) badge = "bg-red-100 text-red-800";
+    
+    h += '<tr class="' + cls + ' cursor-pointer" data-idx="' + i + '">';
+    h += '<td class="p-2"><span class="px-2 py-1 rounded text-xs font-semibold ' + badge + '">' + it.p + '</span>';
+    if (isBest) h += '<span class="ml-1 px-1 bg-yellow-400 text-xs font-bold rounded">BEST</span>';
+    h += '</td>';
+    h += '<td class="p-2 text-center">' + it.t + '</td>';
+    h += '<td class="p-2 text-center font-semibold">' + it.r.toFixed(3) + '%</td>';
+    h += '<td class="p-2 text-center">' + it.base.toFixed(3) + '</td>';
+    h += '<td class="p-2 text-center"><span class="' + (it.calc.adj >= 0 ? "text-green-600" : "text-red-600") + '">' + (it.calc.adj >= 0 ? "+" : "") + it.calc.adj.toFixed(3) + '</span></td>';
+    h += '<td class="p-2 text-center font-bold"><span class="' + (it.afterComp >= 100 ? "text-green-600" : "text-red-600") + '">' + it.afterComp.toFixed(3) + '</span></td>';
+    if (loanAmt) {
+      h += '<td class="p-2 text-center"><span class="' + (it.disc < 0 ? "text-green-600" : "text-red-600") + '">$' + Math.abs(it.disc).toLocaleString(undefined,{maximumFractionDigits:0}) + '</span></td>';
+      h += '<td class="p-2 text-center">$' + it.mo.toLocaleString(undefined,{maximumFractionDigits:0}) + '</td>';
+      h += '<td class="p-2 text-center font-bold">$' + it.total.toLocaleString(undefined,{maximumFractionDigits:0}) + '</td>';
+    }
+    h += '</tr>';
+    
+    if (expanded[i] && it.calc.bd.length > 0) {
+      h += '<tr class="bg-gray-50"><td colspan="9" class="p-2"><div class="grid grid-cols-3 gap-1">';
+      for (var j = 0; j < it.calc.bd.length; j++) {
+        var a = it.calc.bd[j];
+        h += '<div class="text-xs p-1 bg-white rounded border">' + a.l + ': <span class="' + (a.v >= 0 ? "text-green-600" : "text-red-600") + '">' + (a.v >= 0 ? "+" : "") + a.v.toFixed(3) + '</span></div>';
+      }
+      h += '<div class="text-xs p-1 bg-white rounded border">Comp: <span class="text-red-600">-' + F.comp.toFixed(3) + '</span></div>';
+      h += '</div></td></tr>';
+    }
+  }
+  h += '</tbody></table></div></div>';
+  h += '<div class="mt-4 bg-indigo-600 text-white rounded-lg p-3 text-center text-sm">TPO Go | (860) 676-8003</div>';
+  
+  appEl.innerHTML = h;
+  attachEvents();
+}
+
+function attachEvents() {
+  var z = document.getElementById("zip");
+  if (z) { z.onblur = function() { if (this.value !== F.zip) doZip(this.value); }; z.onkeypress = function(e) { if (e.key === "Enter") doZip(this.value); }; }
+  
+  var fi = document.getElementById("fico");
+  if (fi) { fi.onblur = function() { if (this.value !== F.fico) { F.fico = this.value; render(); } }; fi.onkeypress = function(e) { if (e.key === "Enter") { F.fico = this.value; render(); } }; }
+  
+  var pr = document.getElementById("price");
+  if (pr) { pr.onblur = function() { if (this.value !== F.price) doPrice(this.value); }; pr.onkeypress = function(e) { if (e.key === "Enter") doPrice(this.value); }; }
+  
+  var lt = document.getElementById("ltv");
+  if (lt) { lt.onblur = function() { if (this.value !== F.ltv) doLtv(this.value); }; lt.onkeypress = function(e) { if (e.key === "Enter") doLtv(this.value); }; }
+  
+  var la = document.getElementById("loanAmt");
+  if (la) { la.onblur = function() { if (this.value !== String(F.loanAmt)) { F.loanAmt = this.value; render(); } }; la.onkeypress = function(e) { if (e.key === "Enter") { F.loanAmt = this.value; render(); } }; }
+  
+  var co = document.getElementById("comp");
+  if (co) { co.onblur = function() { var v = parseFloat(this.value) || 0; if (v !== F.comp) { F.comp = v; render(); } }; }
+  
+  var pu = document.getElementById("purpose"); if (pu) pu.onchange = function() { F.purpose = this.value; render(); };
+  var un = document.getElementById("units"); if (un) un.onchange = function() { F.units = this.value; render(); };
+  var pp = document.getElementById("prop"); if (pp) pp.onchange = function() { F.prop = this.value; render(); };
+  var oc = document.getElementById("occ"); if (oc) oc.onchange = function() { F.occ = this.value; render(); };
+  var lk = document.getElementById("lock"); if (lk) lk.onchange = function() { F.lock = this.value; render(); };
+  var inc = document.getElementById("income"); if (inc) inc.onchange = function() { F.incomeLevel = this.value; F.firstTimeBuyer = "no"; render(); };
+  var ftb = document.getElementById("ftb"); if (ftb) ftb.onchange = function() { F.firstTimeBuyer = this.value; render(); };
+  var au = document.getElementById("aus"); if (au) au.onchange = function() { F.aus = this.value; render(); };
+  var cf = document.getElementById("catFilter"); if (cf) cf.onchange = function() { F.catFilter = this.value; render(); };
+  var tf = document.getElementById("termFilter"); if (tf) tf.onchange = function() { F.termFilter = this.value; render(); };
+  var es = document.getElementById("escrow"); if (es) es.onchange = function() { F.escrow = this.checked; render(); };
+  var sf = document.getElementById("subFin"); if (sf) sf.onchange = function() { F.subFin = this.checked; render(); };
+  
+  var rows = document.querySelectorAll("tr[data-idx]");
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].onclick = function() {
+      var idx = parseInt(this.getAttribute("data-idx"));
+      expanded[idx] = !expanded[idx];
+      render();
     };
   }
-  
-  // ===========================================
-  // ZIP CODE HANDLER
-  // ===========================================
-  
-  function handleZip(zip) {
-    f.zip = zip;
-    f.incomeLevel = '';
-    amiData = null;
-    
-    if (zip.length === 5 && /^d{5}$/.test(zip)) {
-      var fips = zipLookup[zip];
-      if (fips && allCounties[fips]) {
-        var countyData = allCounties[fips]; var county = countyData[0]; var state = countyData[1];
-        f.state = state;
-        f.county = county;
-        f.fips = fips;
-        if (amiLookup[fips]) {
-          amiData = amiLookup[fips];
-        }
-      }
-    }
-    render();
-  }
-  
-  function handlePrice(v) {
-    f.price = v;
-    if (v && f.ltv) {
-      f.loanAmt = Math.round(parseFloat(v) * parseFloat(f.ltv) / 100);
-    }
-    render();
-  }
-  
-  function handleLtv(v) {
-    f.ltv = v;
-    if (v && f.price) {
-      f.loanAmt = Math.round(parseFloat(f.price) * parseFloat(v) / 100);
-    }
-    render();
-  }
-  
-  // ===========================================
-  // FILTER AND CALCULATE
-  // ===========================================
-  
-  function getFilteredResults() {
-    var loanAmt = parseFloat(f.loanAmt) || 0;
-    var isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
-    var countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
-    
-    return rates.filter(function(item) {
-      // Safety check
-      if (!item || !item.cat) return false;
-      // Hide refi products for purchase
-      if (f.purpose === 'purchase' && item.refi) return false;
-      
-      // HomeReady/HomePossible: Only show if income <= 80% AMI
-      var isAmiProduct = item.cat.indexOf('-ami') > -1 || item.p === 'HomePoss' || item.p === 'HomeReady' || item.p === 'HR ARM';
-      if (isAmiProduct) {
-        if (!f.incomeLevel) return false;
-        if (f.incomeLevel !== 'low') return false;
-      }
-      
-      // RefiNow / Refi Possible
-      var isRefiNowPossible = item.p === 'Refi Now' || item.p === 'Refi Poss';
-      if (isRefiNowPossible) {
-        if (f.purpose !== 'rateterm') return false;
-        if (!f.incomeLevel) return false;
-        if (f.incomeLevel !== 'low' && f.incomeLevel !== 'mid100') return false;
-      }
-      
-      // Product filter
-      if (f.prodFilter !== 'all' && item.p !== f.prodFilter) return false;
-      // Category filter
-      if (f.catFilter !== 'all') {
-        if (f.catFilter === 'govt' && item.cat.indexOf('govt') === -1) return false;
-        if (f.catFilter === 'conv' && item.cat.indexOf('conv') === -1 && item.cat.indexOf('hb') === -1) return false;
-        if (f.catFilter === 'hb' && item.cat.indexOf('hb') === -1) return false;
-        if (f.catFilter === 'reno' && item.cat.indexOf('reno') === -1) return false;
-        if (f.catFilter === 'nqm' && item.cat.indexOf('nqm') === -1) return false;
-      }
-      // Term filter
-      if (f.termFilter !== 'all' && item.t !== f.termFilter) return false;
-      // Auto-filter HB products
-      if (loanAmt > 0 && f.fips) {
-        var baseline = BASELINE[parseInt(f.units) || 1];
-        var cLimit = getCountyLimit(f.fips, f.units);
-        if (item.cat.indexOf('hb') > -1 && loanAmt <= baseline) return false;
-        if (item.cat.indexOf('hb') === -1 && item.cat.indexOf('conv') > -1 && loanAmt > baseline && loanAmt <= cLimit) return false;
-        if (loanAmt > cLimit && (item.cat.indexOf('conv') > -1 || item.cat.indexOf('hb') > -1)) return false;
-      }
-      return true;
-    }).map(function(item) {
-      var base = item['l' + f.lock] || item.l30;
-      var calc = calcAdj(base, item);
-      var afterComp = calc.final - f.comp;
-      var disc = loanAmt > 0 ? (100 - afterComp) * loanAmt / 100 : 0;
-      var months = item.t === '15Y' ? 180 : 360;
-      var mo = loanAmt > 0 ? (loanAmt * (item.r / 100 / 12) * Math.pow(1 + item.r / 100 / 12, months)) / (Math.pow(1 + item.r / 100 / 12, months) - 1) : 0;
-      var total = disc + (mo * months - loanAmt);
-      return Object.assign({}, item, {base: base, calc: calc, afterComp: afterComp, disc: disc, mo: mo, total: total});
-    }).sort(function(a, b) { return a.total - b.total; });
-  }
+}
 
-  // ===========================================
-  // RENDER UI
-  // ===========================================
-  
-  function render() {
-    var filtered = getFilteredResults();
-    var best = filtered.length > 0 && f.loanAmt ? filtered[0] : null;
-    var loanAmt = parseFloat(f.loanAmt) || 0;
-    var countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
-    var isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
-    var isJumbo = f.fips && loanAmt > countyLimit;
-    var llpaWaivedCheck = shouldWaiveLLPA(null);
-    var llpaWaived = llpaWaivedCheck.waived || (f.incomeLevel === 'low');
-    var incomeOpts = getIncomeOptions();
-    
-    var html = '';
-    
-    // Header
-    html += '<div class="bg-white rounded-lg shadow-lg p-4 mb-4">';
-    html += '<h1 class="text-xl font-bold text-indigo-800">TPO Go Complete Rate Sifter</h1>';
-    html += '<p class="text-sm text-gray-600">Effective: ' + effectiveDate + ' | All Products | FHFA 2026 Limits | AMI Income Limits</p>';
-    if (f.fips) {
-      html += '<p class="text-xs mt-1"><span class="font-semibold">' + f.county + ', ' + f.state + '</span> | County Limit (' + f.units + '-unit): <span class="font-bold text-green-700">$' + countyLimit.toLocaleString() + '</span> | ';
-      if (isJumbo) html += '<span class="text-red-600 font-bold">⚠️ JUMBO</span>';
-      else if (isHB) html += '<span class="text-purple-600 font-bold">🏠 HIGH BALANCE</span>';
-      else html += '<span class="text-green-600 font-bold">✅ CONFORMING</span>';
-      html += '</p>';
-    }
-    if (f.incomeLevel === 'low') {
-      html += '<p class="text-xs mt-1 bg-green-100 text-green-800 px-2 py-1 rounded inline-block">✨ HomeReady/HomePossible: ALL LLPAs WAIVED</p>';
-    }
-    if (llpaWaivedCheck.waived && f.incomeLevel !== 'low') {
-      html += '<p class="text-xs mt-1 bg-green-100 text-green-800 px-2 py-1 rounded inline-block">✨ First-Time Buyer ≤' + (incomeOpts && incomeOpts.highCost ? '120' : '100') + '% AMI: ALL LLPAs WAIVED on Conventional</p>';
-    }
-    html += '</div>';
-    
-    // Form
-    html += '<div class="bg-white rounded-lg shadow-lg p-4 mb-4">';
-    html += '<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">';
-    
-    // ZIP
-    html += '<div><label class="block font-medium mb-1">ZIP Code</label>';
-    html += '<input id="zip" value="' + f.zip + '" oninput="handleZip(this.value)" placeholder="Enter ZIP" maxlength="5" class="w-full p-2 border rounded"/></div>';
-    
-    // State
-    html += '<div><label class="block font-medium mb-1">State</label>';
-    html += '<input value="' + f.state + '" readonly class="w-full p-2 border rounded bg-gray-50"/></div>';
-    
-    // County
-    html += '<div><label class="block font-medium mb-1">County</label>';
-    html += '<input value="' + f.county + '" readonly class="w-full p-2 border rounded bg-gray-50"/></div>';
-    
-    // FICO
-    html += '<div><label class="block font-medium mb-1">FICO</label>';
-    html += '<input id="fico" type="number" value="' + f.fico + '" oninput="updateField(\x27fico\x27,this.value)" placeholder="740" class="w-full p-2 border rounded"/></div>';
-    
-    // Price
-    html += '<div><label class="block font-medium mb-1">Purchase Price</label>';
-    html += '<input id="price" type="number" value="' + f.price + '" oninput="handlePrice(this.value)" placeholder="800000" class="w-full p-2 border rounded"/></div>';
-    
-    // LTV
-    html += '<div><label class="block font-medium mb-1">LTV %</label>';
-    html += '<input id="ltv" type="number" value="' + f.ltv + '" oninput="handleLtv(this.value)" placeholder="80" class="w-full p-2 border rounded"/></div>';
-    
-    // Loan Amount
-    html += '<div><label class="block font-medium mb-1">Loan Amount</label>';
-    html += '<input id="loanAmt" type="number" value="' + f.loanAmt + '" oninput="updateField(\x27loanAmt\x27,this.value)" class="w-full p-2 border rounded"/></div>';
-    
-    // Purpose
-    html += '<div><label class="block font-medium mb-1">Loan Purpose</label>';
-    html += '<select id="purpose" onchange="updateField(\x27purpose\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="purchase"' + (f.purpose === 'purchase' ? ' selected' : '') + '>Purchase</option>';
-    html += '<option value="rateterm"' + (f.purpose === 'rateterm' ? ' selected' : '') + '>Rate/Term Refi</option>';
-    html += '<option value="cashout"' + (f.purpose === 'cashout' ? ' selected' : '') + '>Cash-Out Refi</option>';
-    html += '</select></div>';
-    
-    // Units
-    html += '<div><label class="block font-medium mb-1">Units</label>';
-    html += '<select id="units" onchange="updateField(\x27units\x27,this.value)" class="w-full p-2 border rounded">';
-    for (var u = 1; u <= 4; u++) {
-      html += '<option value="' + u + '"' + (f.units === '' + u ? ' selected' : '') + '>' + u + ' Unit' + (u > 1 ? 's' : '') + '</option>';
-    }
-    html += '</select></div>';
-    
-    // Property Type
-    html += '<div><label class="block font-medium mb-1">Property Type</label>';
-    html += '<select id="prop" onchange="updateField(\x27prop\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="sf"' + (f.prop === 'sf' ? ' selected' : '') + '>Single Family</option>';
-    html += '<option value="condo"' + (f.prop === 'condo' ? ' selected' : '') + '>Condo</option>';
-    html += '<option value="mfg"' + (f.prop === 'mfg' ? ' selected' : '') + '>Manufactured</option>';
-    html += '</select></div>';
-    
-    // Occupancy
-    html += '<div><label class="block font-medium mb-1">Occupancy</label>';
-    html += '<select id="occ" onchange="updateField(\x27occ\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="primary"' + (f.occ === 'primary' ? ' selected' : '') + '>Primary</option>';
-    html += '<option value="sec"' + (f.occ === 'sec' ? ' selected' : '') + '>Second Home</option>';
-    html += '<option value="inv"' + (f.occ === 'inv' ? ' selected' : '') + '>Investment</option>';
-    html += '</select></div>';
-    
-    // Lock
-    html += '<div><label class="block font-medium mb-1">Lock Period</label>';
-    html += '<select id="lock" onchange="updateField(\x27lock\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="15"' + (f.lock === '15' ? ' selected' : '') + '>15 Day</option>';
-    html += '<option value="30"' + (f.lock === '30' ? ' selected' : '') + '>30 Day</option>';
-    html += '<option value="45"' + (f.lock === '45' ? ' selected' : '') + '>45 Day</option>';
-    html += '<option value="60"' + (f.lock === '60' ? ' selected' : '') + '>60 Day</option>';
-    html += '</select></div>';
-    
-    // Income Level (conditional)
-    if (incomeOpts) {
-      html += '<div class="col-span-2"><label class="block font-medium mb-1 text-indigo-700">Borrower Income Level 💰</label>';
-      html += '<select id="incomeLevel" onchange="updateField(\x27incomeLevel\x27,this.value)" class="w-full p-2 border-2 border-indigo-300 rounded bg-indigo-50">';
-      html += '<option value="">-- Select Income Level --</option>';
-      html += '<option value="low"' + (f.incomeLevel === 'low' ? ' selected' : '') + '>≤ $' + incomeOpts.low.toLocaleString() + ' (≤80% AMI)</option>';
-      if (incomeOpts.highCost) {
-        html += '<option value="mid100"' + (f.incomeLevel === 'mid100' ? ' selected' : '') + '>$' + incomeOpts.low.toLocaleString() + ' - $' + incomeOpts.ami100.toLocaleString() + ' (80-100% AMI)</option>';
-        html += '<option value="mid120"' + (f.incomeLevel === 'mid120' ? ' selected' : '') + '>$' + incomeOpts.ami100.toLocaleString() + ' - $' + incomeOpts.mid.toLocaleString() + ' (100-120% AMI)</option>';
-      } else {
-        html += '<option value="mid100"' + (f.incomeLevel === 'mid100' ? ' selected' : '') + '>$' + incomeOpts.low.toLocaleString() + ' - $' + incomeOpts.ami100.toLocaleString() + ' (80-100% AMI)</option>';
-      }
-      html += '<option value="high"' + (f.incomeLevel === 'high' ? ' selected' : '') + '>> $' + incomeOpts.mid.toLocaleString() + ' (>' + (incomeOpts.highCost ? '120' : '100') + '% AMI)</option>';
-      html += '</select>';
-      if (f.incomeLevel === 'low') html += '<p class="text-xs text-green-600 mt-1">✅ HomeReady/HomePossible eligible (LLPAs WAIVED) + RefiNow/Possible eligible</p>';
-      if (f.incomeLevel === 'mid100') html += '<p class="text-xs text-blue-600 mt-1">' + (f.purpose === 'rateterm' ? '✅ RefiNow/Possible eligible | ' : '') + 'If First-Time Buyer: LLPAs waived</p>';
-      if (f.incomeLevel === 'mid120') html += '<p class="text-xs text-blue-600 mt-1">⚠️ RefiNow/Possible NOT eligible | If First-Time Buyer: LLPAs waived</p>';
-      html += '</div>';
-    }
-    
-    // First-Time Buyer (conditional)
-    if (f.incomeLevel === 'mid100' || f.incomeLevel === 'mid120') {
-      html += '<div><label class="block font-medium mb-1 text-indigo-700">First-Time Buyer?</label>';
-      html += '<select id="firstTimeBuyer" onchange="updateField(\x27firstTimeBuyer\x27,this.value)" class="w-full p-2 border-2 border-indigo-300 rounded bg-indigo-50">';
-      html += '<option value="no"' + (f.firstTimeBuyer === 'no' ? ' selected' : '') + '>No</option>';
-      html += '<option value="yes"' + (f.firstTimeBuyer === 'yes' ? ' selected' : '') + '>Yes</option>';
-      html += '</select>';
-      if (f.firstTimeBuyer === 'yes') html += '<p class="text-xs text-green-600 mt-1">✨ LLPAs WAIVED!</p>';
-      html += '</div>';
-    }
-    
-    // Broker Comp
-    html += '<div><label class="block font-medium mb-1">Broker Comp %</label>';
-    html += '<input id="comp" type="number" step="0.125" value="' + f.comp + '" oninput="updateField(\x27comp\x27,parseFloat(this.value)||0)" class="w-full p-2 border rounded"/></div>';
-    
-    // AUS
-    html += '<div><label class="block font-medium mb-1">AUS (FL)</label>';
-    html += '<select id="aus" onchange="updateField(\x27aus\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="LP"' + (f.aus === 'LP' ? ' selected' : '') + '>LP</option>';
-    html += '<option value="DU"' + (f.aus === 'DU' ? ' selected' : '') + '>DU</option>';
-    html += '</select></div>';
-    
-    // Category Filter
-    html += '<div><label class="block font-medium mb-1">Category</label>';
-    html += '<select id="catFilter" onchange="updateField(\x27catFilter\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="all"' + (f.catFilter === 'all' ? ' selected' : '') + '>All</option>';
-    html += '<option value="govt"' + (f.catFilter === 'govt' ? ' selected' : '') + '>Government</option>';
-    html += '<option value="conv"' + (f.catFilter === 'conv' ? ' selected' : '') + '>Conventional</option>';
-    html += '<option value="hb"' + (f.catFilter === 'hb' ? ' selected' : '') + '>High Balance</option>';
-    html += '<option value="reno"' + (f.catFilter === 'reno' ? ' selected' : '') + '>Renovation</option>';
-    html += '<option value="nqm"' + (f.catFilter === 'nqm' ? ' selected' : '') + '>Non-QM</option>';
-    html += '</select></div>';
-    
-    // Term Filter
-    html += '<div><label class="block font-medium mb-1">Term</label>';
-    html += '<select id="termFilter" onchange="updateField(\x27termFilter\x27,this.value)" class="w-full p-2 border rounded">';
-    html += '<option value="all"' + (f.termFilter === 'all' ? ' selected' : '') + '>All Terms</option>';
-    html += '<option value="30Y"' + (f.termFilter === '30Y' ? ' selected' : '') + '>30 Year</option>';
-    html += '<option value="25Y"' + (f.termFilter === '25Y' ? ' selected' : '') + '>25 Year</option>';
-    html += '<option value="20Y"' + (f.termFilter === '20Y' ? ' selected' : '') + '>20 Year</option>';
-    html += '<option value="15Y"' + (f.termFilter === '15Y' ? ' selected' : '') + '>15 Year</option>';
-    html += '<option value="10Y"' + (f.termFilter === '10Y' ? ' selected' : '') + '>10 Year</option>';
-    html += '<option value="ARM"' + (f.termFilter === 'ARM' ? ' selected' : '') + '>ARM</option>';
-    html += '</select></div>';
-    
-    // Checkboxes
-    html += '<div class="flex items-center pt-6"><input type="checkbox" id="escrow"' + (f.escrow ? ' checked' : '') + ' onchange="updateField(\x27escrow\x27,this.checked)" class="mr-2 h-4 w-4"/><label>Escrow Waiver</label></div>';
-    html += '<div class="flex items-center pt-6"><input type="checkbox" id="subFin"' + (f.subFin ? ' checked' : '') + ' onchange="updateField(\x27subFin\x27,this.checked)" class="mr-2 h-4 w-4"/><label>Sub Financing</label></div>';
-    
-    html += '</div></div>';
-    
-    // Results
-    html += '<div class="bg-white rounded-lg shadow-lg p-4">';
-    html += '<h2 class="font-semibold mb-2 text-indigo-800">Results (' + filtered.length + ' products)' + (llpaWaived ? ' <span class="text-green-600 text-sm ml-2">✨ LLPAs Waived</span>' : '') + '</h2>';
-    
-    if (isJumbo) {
-      html += '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-3">⚠️ Loan exceeds county limit - Jumbo not available</div>';
-    }
-    if (!f.incomeLevel && f.fips) {
-      html += '<div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 rounded mb-3">💰 Select income level above to see HomeReady/HomePossible products</div>';
-    }
-    
-    html += '<div class="overflow-x-auto"><table class="w-full text-sm">';
-    html += '<thead class="bg-indigo-50"><tr>';
-    html += '<th class="p-2 text-left">Product</th><th class="p-2">Term</th><th class="p-2">Rate</th><th class="p-2">Base</th><th class="p-2">Adj</th><th class="p-2">Final</th>';
-    if (f.loanAmt) html += '<th class="p-2">Cost/Credit</th><th class="p-2">P&I</th><th class="p-2">Total Cost</th>';
-    html += '</tr></thead><tbody>';
-    
-    filtered.slice(0, 50).forEach(function(item, i) {
-      var isBest = best && item.r === best.r && item.p === best.p;
-      var rowClass = (isBest ? 'bg-yellow-50 border-2 border-yellow-400 ' : 'border-b hover:bg-gray-50 ') + 'cursor-pointer' + (item.calc.waived ? ' bg-green-50' : '');
-      
-      // Product badge class
-      var badgeClass = 'bg-green-100 text-green-800';
-      if (item.cat.indexOf('govt') > -1) badgeClass = 'bg-blue-100 text-blue-800';
-      else if (item.cat.indexOf('hb') > -1) badgeClass = 'bg-purple-100 text-purple-800';
-      else if (item.cat.indexOf('nqm') > -1) badgeClass = 'bg-red-100 text-red-800';
-      else if (item.cat.indexOf('-ami') > -1) badgeClass = 'bg-yellow-100 text-yellow-800';
-      
-      html += '<tr class="' + rowClass + '" onclick="toggleExpand(' + i + ')">';
-      html += '<td class="p-2"><span class="px-2 py-1 rounded text-xs font-semibold ' + badgeClass + '">' + item.p + '</span>';
-      if (isBest) html += '<span class="ml-1 px-1 py-0.5 bg-yellow-400 text-xs font-bold rounded">BEST</span>';
-      if (item.calc.waived) html += '<span class="ml-1 text-green-600 text-xs">✨</span>';
-      html += '</td>';
-      html += '<td class="p-2 text-center">' + item.t + '</td>';
-      html += '<td class="p-2 text-center font-semibold">' + item.r.toFixed(3) + '%</td>';
-      html += '<td class="p-2 text-center">' + item.base.toFixed(3) + '</td>';
-      html += '<td class="p-2 text-center"><span class="' + (item.calc.adj >= 0 ? 'text-green-600' : 'text-red-600') + '">' + (item.calc.adj >= 0 ? '+' : '') + item.calc.adj.toFixed(3) + '</span></td>';
-      html += '<td class="p-2 text-center font-bold"><span class="' + (item.afterComp >= 100 ? 'text-green-600' : 'text-red-600') + '">' + item.afterComp.toFixed(3) + '</span></td>';
-      
-      if (f.loanAmt) {
-        html += '<td class="p-2 text-center"><span class="' + (item.disc < 0 ? 'text-green-600' : 'text-red-600') + '">$' + Math.abs(item.disc).toLocaleString(undefined, {maximumFractionDigits: 0}) + '</span>';
-        html += '<div class="text-xs text-gray-500">' + (item.disc < 0 ? 'Credit' : 'Cost') + '</div></td>';
-        html += '<td class="p-2 text-center">$' + item.mo.toLocaleString(undefined, {maximumFractionDigits: 0}) + '</td>';
-        html += '<td class="p-2 text-center font-bold">$' + item.total.toLocaleString(undefined, {maximumFractionDigits: 0}) + '</td>';
-      }
-      html += '</tr>';
-      
-      // Expandable details
-      if (expanded[i] && item.calc.bd.length > 0) {
-        html += '<tr class="bg-gray-50"><td colspan="9" class="p-2"><div class="grid grid-cols-2 md:grid-cols-4 gap-2">';
-        item.calc.bd.forEach(function(a) {
-          var adjClass = a.l.indexOf('WAIVED') > -1 ? 'bg-green-100 border-green-300' : 'bg-white';
-          html += '<div class="flex justify-between p-1 rounded border text-xs ' + adjClass + '"><span>' + a.l + '</span><span class="' + (a.v >= 0 ? 'text-green-600' : 'text-red-600') + '">' + (a.v >= 0 ? '+' : '') + a.v.toFixed(3) + '</span></div>';
-        });
-        html += '<div class="flex justify-between bg-white p-1 rounded border text-xs"><span>Broker Comp</span><span class="text-red-600">-' + f.comp.toFixed(3) + '</span></div>';
-        html += '</div></td></tr>';
-      }
-    });
-    
-    html += '</tbody></table></div></div>';
-    
-    // Footer
-    html += '<div class="mt-4 bg-indigo-600 text-white rounded-lg p-3 text-center text-sm">';
-    html += 'TPO Go Wholesale | Lock Desk: (860) 676-8003 | tpogo.com';
-    html += '</div>';
-    
-    app.innerHTML = html;
-  }
-  
-  // ===========================================
-  // GLOBAL FUNCTIONS
-  // ===========================================
-  
-  window.handleZip = handleZip;
-  window.handlePrice = handlePrice;
-  window.handleLtv = handleLtv;
-  
-  window.updateField = function(field, value) {
-    f[field] = value;
-    render();
-  };
-  
-  window.toggleExpand = function(i) {
-    expanded[i] = !expanded[i];
-    render();
-  };
-  
-  // Initial render
-  render();
+render();
 })();
 </script></body></html>
