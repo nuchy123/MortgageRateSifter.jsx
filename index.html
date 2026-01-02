@@ -728,7 +728,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // FICO
     html += '<div><label class="block font-medium mb-1">FICO</label>';
-    html += '<input id="fico" type="number" value="' + f.fico + '" oninput="updateField('fico',this.value)" placeholder="740" class="w-full p-2 border rounded"/></div>';
+    html += '<input id="fico" type="number" value="' + f.fico + '" oninput="updateField(\x27fico\x27,this.value)" placeholder="740" class="w-full p-2 border rounded"/></div>';
     
     // Price
     html += '<div><label class="block font-medium mb-1">Purchase Price</label>';
@@ -740,11 +740,11 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Loan Amount
     html += '<div><label class="block font-medium mb-1">Loan Amount</label>';
-    html += '<input id="loanAmt" type="number" value="' + f.loanAmt + '" oninput="updateField('loanAmt',this.value)" class="w-full p-2 border rounded"/></div>';
+    html += '<input id="loanAmt" type="number" value="' + f.loanAmt + '" oninput="updateField(\x27loanAmt\x27,this.value)" class="w-full p-2 border rounded"/></div>';
     
     // Purpose
     html += '<div><label class="block font-medium mb-1">Loan Purpose</label>';
-    html += '<select id="purpose" onchange="updateField('purpose',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="purpose" onchange="updateField(\x27purpose\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="purchase"' + (f.purpose === 'purchase' ? ' selected' : '') + '>Purchase</option>';
     html += '<option value="rateterm"' + (f.purpose === 'rateterm' ? ' selected' : '') + '>Rate/Term Refi</option>';
     html += '<option value="cashout"' + (f.purpose === 'cashout' ? ' selected' : '') + '>Cash-Out Refi</option>';
@@ -752,7 +752,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Units
     html += '<div><label class="block font-medium mb-1">Units</label>';
-    html += '<select id="units" onchange="updateField('units',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="units" onchange="updateField(\x27units\x27,this.value)" class="w-full p-2 border rounded">';
     for (var u = 1; u <= 4; u++) {
       html += '<option value="' + u + '"' + (f.units === '' + u ? ' selected' : '') + '>' + u + ' Unit' + (u > 1 ? 's' : '') + '</option>';
     }
@@ -760,7 +760,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Property Type
     html += '<div><label class="block font-medium mb-1">Property Type</label>';
-    html += '<select id="prop" onchange="updateField('prop',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="prop" onchange="updateField(\x27prop\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="sf"' + (f.prop === 'sf' ? ' selected' : '') + '>Single Family</option>';
     html += '<option value="condo"' + (f.prop === 'condo' ? ' selected' : '') + '>Condo</option>';
     html += '<option value="mfg"' + (f.prop === 'mfg' ? ' selected' : '') + '>Manufactured</option>';
@@ -768,7 +768,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Occupancy
     html += '<div><label class="block font-medium mb-1">Occupancy</label>';
-    html += '<select id="occ" onchange="updateField('occ',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="occ" onchange="updateField(\x27occ\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="primary"' + (f.occ === 'primary' ? ' selected' : '') + '>Primary</option>';
     html += '<option value="sec"' + (f.occ === 'sec' ? ' selected' : '') + '>Second Home</option>';
     html += '<option value="inv"' + (f.occ === 'inv' ? ' selected' : '') + '>Investment</option>';
@@ -776,7 +776,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Lock
     html += '<div><label class="block font-medium mb-1">Lock Period</label>';
-    html += '<select id="lock" onchange="updateField('lock',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="lock" onchange="updateField(\x27lock\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="15"' + (f.lock === '15' ? ' selected' : '') + '>15 Day</option>';
     html += '<option value="30"' + (f.lock === '30' ? ' selected' : '') + '>30 Day</option>';
     html += '<option value="45"' + (f.lock === '45' ? ' selected' : '') + '>45 Day</option>';
@@ -786,7 +786,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     // Income Level (conditional)
     if (incomeOpts) {
       html += '<div class="col-span-2"><label class="block font-medium mb-1 text-indigo-700">Borrower Income Level 💰</label>';
-      html += '<select id="incomeLevel" onchange="updateField('incomeLevel',this.value)" class="w-full p-2 border-2 border-indigo-300 rounded bg-indigo-50">';
+      html += '<select id="incomeLevel" onchange="updateField(\x27incomeLevel\x27,this.value)" class="w-full p-2 border-2 border-indigo-300 rounded bg-indigo-50">';
       html += '<option value="">-- Select Income Level --</option>';
       html += '<option value="low"' + (f.incomeLevel === 'low' ? ' selected' : '') + '>≤ $' + incomeOpts.low.toLocaleString() + ' (≤80% AMI)</option>';
       if (incomeOpts.highCost) {
@@ -806,7 +806,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     // First-Time Buyer (conditional)
     if (f.incomeLevel === 'mid100' || f.incomeLevel === 'mid120') {
       html += '<div><label class="block font-medium mb-1 text-indigo-700">First-Time Buyer?</label>';
-      html += '<select id="firstTimeBuyer" onchange="updateField('firstTimeBuyer',this.value)" class="w-full p-2 border-2 border-indigo-300 rounded bg-indigo-50">';
+      html += '<select id="firstTimeBuyer" onchange="updateField(\x27firstTimeBuyer\x27,this.value)" class="w-full p-2 border-2 border-indigo-300 rounded bg-indigo-50">';
       html += '<option value="no"' + (f.firstTimeBuyer === 'no' ? ' selected' : '') + '>No</option>';
       html += '<option value="yes"' + (f.firstTimeBuyer === 'yes' ? ' selected' : '') + '>Yes</option>';
       html += '</select>';
@@ -816,18 +816,18 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Broker Comp
     html += '<div><label class="block font-medium mb-1">Broker Comp %</label>';
-    html += '<input id="comp" type="number" step="0.125" value="' + f.comp + '" oninput="updateField('comp',parseFloat(this.value)||0)" class="w-full p-2 border rounded"/></div>';
+    html += '<input id="comp" type="number" step="0.125" value="' + f.comp + '" oninput="updateField(\x27comp\x27,parseFloat(this.value)||0)" class="w-full p-2 border rounded"/></div>';
     
     // AUS
     html += '<div><label class="block font-medium mb-1">AUS (FL)</label>';
-    html += '<select id="aus" onchange="updateField('aus',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="aus" onchange="updateField(\x27aus\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="LP"' + (f.aus === 'LP' ? ' selected' : '') + '>LP</option>';
     html += '<option value="DU"' + (f.aus === 'DU' ? ' selected' : '') + '>DU</option>';
     html += '</select></div>';
     
     // Category Filter
     html += '<div><label class="block font-medium mb-1">Category</label>';
-    html += '<select id="catFilter" onchange="updateField('catFilter',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="catFilter" onchange="updateField(\x27catFilter\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="all"' + (f.catFilter === 'all' ? ' selected' : '') + '>All</option>';
     html += '<option value="govt"' + (f.catFilter === 'govt' ? ' selected' : '') + '>Government</option>';
     html += '<option value="conv"' + (f.catFilter === 'conv' ? ' selected' : '') + '>Conventional</option>';
@@ -838,7 +838,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     
     // Term Filter
     html += '<div><label class="block font-medium mb-1">Term</label>';
-    html += '<select id="termFilter" onchange="updateField('termFilter',this.value)" class="w-full p-2 border rounded">';
+    html += '<select id="termFilter" onchange="updateField(\x27termFilter\x27,this.value)" class="w-full p-2 border rounded">';
     html += '<option value="all"' + (f.termFilter === 'all' ? ' selected' : '') + '>All Terms</option>';
     html += '<option value="30Y"' + (f.termFilter === '30Y' ? ' selected' : '') + '>30 Year</option>';
     html += '<option value="25Y"' + (f.termFilter === '25Y' ? ' selected' : '') + '>25 Year</option>';
@@ -849,8 +849,8 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     html += '</select></div>';
     
     // Checkboxes
-    html += '<div class="flex items-center pt-6"><input type="checkbox" id="escrow"' + (f.escrow ? ' checked' : '') + ' onchange="updateField('escrow',this.checked)" class="mr-2 h-4 w-4"/><label>Escrow Waiver</label></div>';
-    html += '<div class="flex items-center pt-6"><input type="checkbox" id="subFin"' + (f.subFin ? ' checked' : '') + ' onchange="updateField('subFin',this.checked)" class="mr-2 h-4 w-4"/><label>Sub Financing</label></div>';
+    html += '<div class="flex items-center pt-6"><input type="checkbox" id="escrow"' + (f.escrow ? ' checked' : '') + ' onchange="updateField(\x27escrow\x27,this.checked)" class="mr-2 h-4 w-4"/><label>Escrow Waiver</label></div>';
+    html += '<div class="flex items-center pt-6"><input type="checkbox" id="subFin"' + (f.subFin ? ' checked' : '') + ' onchange="updateField(\x27subFin\x27,this.checked)" class="mr-2 h-4 w-4"/><label>Sub Financing</label></div>';
     
     html += '</div></div>';
     
