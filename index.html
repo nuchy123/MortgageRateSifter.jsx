@@ -582,7 +582,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     f.incomeLevel = '';
     amiData = null;
     
-    if (zip.length === 5 && /^\\d{5}$/.test(zip)) {
+    if (zip.length === 5 && /^d{5}$/.test(zip)) {
       var fips = zipLookup[zip];
       if (fips && allCounties[fips]) {
         var countyData = allCounties[fips]; var county = countyData[0]; var state = countyData[1];
@@ -871,7 +871,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     if (f.loanAmt) html += '<th class="p-2">Cost/Credit</th><th class="p-2">P&I</th><th class="p-2">Total Cost</th>';
     html += '</tr></thead><tbody>';
     
-    filtered.slice(0, 50).forEachfunction((item, i) {
+    filtered.slice(0, 50).forEach(function(item, i) {
       var isBest = best && item.r === best.r && item.p === best.p;
       var rowClass = (isBest ? 'bg-yellow-50 border-2 border-yellow-400 ' : 'border-b hover:bg-gray-50 ') + 'cursor-pointer' + (item.calc.waived ? ' bg-green-50' : '');
       
