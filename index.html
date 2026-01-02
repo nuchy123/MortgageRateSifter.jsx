@@ -623,6 +623,8 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     var countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
     
     return rates.filter(function(item) {
+      // Safety check
+      if (!item || !item.cat) return false;
       // Hide refi products for purchase
       if (f.purpose === 'purchase' && item.refi) return false;
       
