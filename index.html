@@ -622,7 +622,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
     var isHB = f.fips ? isHighBalance(loanAmt, f.fips, f.units) : false;
     var countyLimit = f.fips ? getCountyLimit(f.fips, f.units) : BASELINE[parseInt(f.units) || 1];
     
-    return rates.filter(function(item) { return  {; }
+    return rates.filter(function(item) {
       // Hide refi products for purchase
       if (f.purpose === 'purchase' && item.refi) return false;
       
@@ -662,7 +662,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
         if (loanAmt > cLimit && (item.cat.indexOf('conv') > -1 || item.cat.indexOf('hb') > -1)) return false;
       }
       return true;
-    }).map(function(item) { return  {; }
+    }).map(function(item) {
       var base = item['l' + f.lock] || item.l30;
       var calc = calcAdj(base, item);
       var afterComp = calc.final - f.comp;
@@ -904,7 +904,7 @@ Object.assign(RATEDATA.zipLookup,{"99926": "02198", "99927": "02198", "99928": "
       // Expandable details
       if (expanded[i] && item.calc.bd.length > 0) {
         html += '<tr class="bg-gray-50"><td colspan="9" class="p-2"><div class="grid grid-cols-2 md:grid-cols-4 gap-2">';
-        item.calc.bd.forEach(function(a) { return  {; }
+        item.calc.bd.forEach(function(a) {
           var adjClass = a.l.indexOf('WAIVED') > -1 ? 'bg-green-100 border-green-300' : 'bg-white';
           html += '<div class="flex justify-between p-1 rounded border text-xs ' + adjClass + '"><span>' + a.l + '</span><span class="' + (a.v >= 0 ? 'text-green-600' : 'text-red-600') + '">' + (a.v >= 0 ? '+' : '') + a.v.toFixed(3) + '</span></div>';
         });
