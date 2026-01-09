@@ -488,12 +488,15 @@ function calcAdj(base, item) {
   var adj = 0, bd = [];
   var fico = parseInt(F.fico) || 0, ltv = parseFloat(F.ltv) || 0, loanAmt = parseFloat(F.loanAmt) || 0;
   var ltvB = getLtvBucket(ltv), ficoB = getFicoBucket(fico);
-  var isConv = item.cat && (item.cat.indexOf("conv") > -1 || item.cat.indexOf("hb") > -1 || item.cat.indexOf("reno") > -1);
+  var isGovt = item.cat && item.cat.indexOf("govt") > -1;
+  var isConv = item.cat && !isGovt && (item.cat.indexOf("conv") > -1 || item.cat.indexOf("hb") > -1 || item.cat.indexOf("reno") > -1);
   var wCheck = shouldWaiveLLPA(item);
   var waive = wCheck.waived && isConv;
   
   if (waive) { bd.push({l:"LLPA WAIVED",v:0}); }
-  else {
+  
+  // Agency LLPAs - only apply when NOT waived
+  if (!waive) {
     if (isConv && fico && ltv) {
       var mx = F.purpose === "purchase" ? ficoLtvPurch : F.purpose === "cashout" ? ficoLtvCO : ficoLtvRefi;
       if (mx[ficoB]) { var v = mx[ficoB][ltvB] || 0; if (v !== 0) { adj += v; bd.push({l:"FICO/LTV",v:v}); } }
@@ -505,14 +508,6 @@ function calcAdj(base, item) {
       if (F.occ === "inv") { var v = invAdj[ltvB] || -1.125; adj += v; bd.push({l:"Inv",v:v}); }
       else if (F.occ === "sec") { var v = secAdj[ltvB] || -1.125; adj += v; bd.push({l:"2nd",v:v}); }
       if (F.subFin) { var v = subFinAdj[ltvB] || -0.625; adj += v; bd.push({l:"SubFin",v:v}); }
-      if (loanAmt > 0) {
-        for (var i = 0; i < loanAdj.length; i++) {
-          if (loanAmt >= loanAdj[i].min && loanAmt <= loanAdj[i].max && loanAdj[i].val !== 0) {
-            adj += loanAdj[i].val; bd.push({l:"LoanAmt",v:loanAdj[i].val}); break;
-          }
-        }
-      }
-      if (F.state && stAdj[F.state] && stAdj[F.state] !== 0) { adj += stAdj[F.state]; bd.push({l:"State",v:stAdj[F.state]}); }
       var isHB = item.cat && item.cat.indexOf("hb") > -1;
       var isARM = item.t && item.t.indexOf("ARM") > -1;
       if (isHB && !isARM) { var v = hbFixedAdj[ltvB] || 0; if (v !== 0) { adj += v; bd.push({l:"HB Fixed",v:v}); } }
@@ -524,12 +519,33 @@ function calcAdj(base, item) {
       var gFicoB = fico >= 780 ? 780 : fico >= 760 ? 760 : fico >= 740 ? 740 : fico >= 720 ? 720 : fico >= 700 ? 700 : fico >= 680 ? 680 : fico >= 660 ? 660 : fico >= 640 ? 640 : fico >= 620 ? 620 : fico >= 600 ? 600 : fico >= 580 ? 580 : 500;
       var gv = govtFicoAdj[gFicoB] || 0; if (gv !== 0) { adj += gv; bd.push({l:"Govt FICO",v:gv}); }
     }
+    // PayUp - only for regular Conv 30Y (not HB, not waived)
+    var isHBprod = item.cat && item.cat.indexOf("hb") > -1;
+    if (isConv && item.t === "30Y" && !isHBprod) { var pv = getPayup(item.r, F.state, F.occ, F.aus); if (pv !== 0) { adj += pv; bd.push({l:"PayUp",v:pv}); } }
   }
-  // Always apply
+  
+  // State, Loan Amount, and Misc adjustments - ALWAYS apply (even when waived)
+  var isHBproduct = item.cat && item.cat.indexOf("hb") > -1 && item.cat.indexOf("govt") === -1;
+  if (isConv) {
+    // Loan Amount adjustments - N/A on High Balance
+    if (loanAmt > 0 && !isHBproduct) {
+      for (var i = 0; i < loanAdj.length; i++) {
+        if (loanAmt >= loanAdj[i].min && loanAmt <= loanAdj[i].max && loanAdj[i].val !== 0) {
+          adj += loanAdj[i].val; bd.push({l:"LoanAmt",v:loanAdj[i].val}); break;
+        }
+      }
+    }
+    if (F.state && stAdj[F.state] && stAdj[F.state] !== 0) { adj += stAdj[F.state]; bd.push({l:"State",v:stAdj[F.state]}); }
+  }
+  
+  // Misc adjustments - ALWAYS apply
   if (isConv && sp.conv !== 0) { adj += sp.conv; bd.push({l:"Special",v:sp.conv}); }
-  if ((item.cat === "govt" || item.cat === "govt-hb") && sp.govt !== 0) { adj += sp.govt; bd.push({l:"GovtSpec",v:sp.govt}); }
-  if (isConv && fico > 740 && sp.fico740 !== 0 && !waive) { adj += sp.fico740; bd.push({l:"FICO740",v:sp.fico740}); }
-  if (isConv && item.t === "30Y") { var pv = getPayup(item.r, F.state, F.occ, F.aus); if (pv !== 0) { adj += pv; bd.push({l:"PayUp",v:pv}); } }
+  if (isGovt && sp.govt !== 0) { adj += sp.govt; bd.push({l:"GovtSpec",v:sp.govt}); }
+  // FICO>740 bonus: N/A for HB, ARMs, and Reno
+  var isHBprod = item.cat && item.cat.indexOf("hb") > -1;
+  var isARMprod = item.t && item.t.indexOf("ARM") > -1;
+  var isRenoProd = item.cat && item.cat.indexOf("reno") > -1;
+  if (isConv && fico > 740 && sp.fico740 !== 0 && !isHBprod && !isARMprod && !isRenoProd) { adj += sp.fico740; bd.push({l:"FICO740",v:sp.fico740}); }
   if (F.escrow && isConv) { var ev = (F.state === "CA" || F.state === "NY") ? misc.escCANY : misc.escOther; if (ev !== 0) { adj += ev; bd.push({l:"Escrow",v:ev}); } }
   return {adj:adj, final:base+adj, bd:bd, waived:waive};
 }
@@ -552,8 +568,12 @@ function getResults() {
     if (F.prodFilter !== "all" && item.p !== F.prodFilter) continue;
     if (F.catFilter !== "all") {
       if (F.catFilter === "govt" && item.cat.indexOf("govt") === -1) continue;
-      if (F.catFilter === "conv" && item.cat.indexOf("conv") === -1 && item.cat.indexOf("hb") === -1) continue;
-      if (F.catFilter === "hb" && item.cat.indexOf("hb") === -1) continue;
+      if (F.catFilter === "conv") {
+        var isConvHB = item.cat.indexOf("hb") > -1 && item.cat.indexOf("govt") === -1;
+        var isConvReg = item.cat.indexOf("conv") > -1;
+        if (!isConvReg && !isConvHB) continue;
+      }
+      if (F.catFilter === "hb" && (item.cat.indexOf("hb") === -1 || item.cat.indexOf("govt") > -1)) continue;
       if (F.catFilter === "reno" && item.cat.indexOf("reno") === -1) continue;
       if (F.catFilter === "nqm" && item.cat.indexOf("nqm") === -1) continue;
     }
