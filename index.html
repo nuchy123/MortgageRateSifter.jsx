@@ -519,9 +519,6 @@ function calcAdj(base, item) {
       var gFicoB = fico >= 780 ? 780 : fico >= 760 ? 760 : fico >= 740 ? 740 : fico >= 720 ? 720 : fico >= 700 ? 700 : fico >= 680 ? 680 : fico >= 660 ? 660 : fico >= 640 ? 640 : fico >= 620 ? 620 : fico >= 600 ? 600 : fico >= 580 ? 580 : 500;
       var gv = govtFicoAdj[gFicoB] || 0; if (gv !== 0) { adj += gv; bd.push({l:"Govt FICO",v:gv}); }
     }
-    // PayUp - only for regular Conv 30Y (not HB, not waived)
-    var isHBprod = item.cat && item.cat.indexOf("hb") > -1;
-    if (isConv && item.t === "30Y" && !isHBprod) { var pv = getPayup(item.r, F.state, F.occ, F.aus); if (pv !== 0) { adj += pv; bd.push({l:"PayUp",v:pv}); } }
   }
   
   // State, Loan Amount, and Misc adjustments - ALWAYS apply (even when waived)
@@ -536,6 +533,8 @@ function calcAdj(base, item) {
       }
     }
     if (F.state && stAdj[F.state] && stAdj[F.state] !== 0) { adj += stAdj[F.state]; bd.push({l:"State",v:stAdj[F.state]}); }
+    // PayUp - ALWAYS applies (it is a Misc adjustment, not an Agency LLPA) - only for regular Conv 30Y (not HB)
+    if (item.t === "30Y" && !isHBproduct) { var pv = getPayup(item.r, F.state, F.occ, F.aus); if (pv !== 0) { adj += pv; bd.push({l:"PayUp",v:pv}); } }
   }
   
   // Misc adjustments - ALWAYS apply
