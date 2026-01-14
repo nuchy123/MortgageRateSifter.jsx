@@ -614,6 +614,7 @@ function doZip(zip) {
 function doPrice(v) {
   F.price = v;
   if (v && F.ltv) F.loanAmt = Math.round(parseFloat(v) * parseFloat(F.ltv) / 100);
+  else if (v && F.loanAmt && !F.ltv) F.ltv = Math.round(parseFloat(F.loanAmt) / parseFloat(v) * 10000) / 100;
   render();
 }
 
@@ -818,7 +819,7 @@ function attachEvents() {
   if (lt) { lt.onblur = function() { if (this.value !== F.ltv) doLtv(this.value); }; lt.onkeypress = function(e) { if (e.key === "Enter") doLtv(this.value); }; }
   
   var la = document.getElementById("loanAmt");
-  if (la) { la.onblur = function() { if (this.value !== String(F.loanAmt)) { F.loanAmt = this.value; render(); } }; la.onkeypress = function(e) { if (e.key === "Enter") { F.loanAmt = this.value; render(); } }; }
+  if (la) { la.onblur = function() { if (this.value !== String(F.loanAmt)) { F.loanAmt = this.value; if (F.price && this.value) { F.ltv = Math.round(parseFloat(this.value) / parseFloat(F.price) * 10000) / 100; } render(); } }; la.onkeypress = function(e) { if (e.key === "Enter") { F.loanAmt = this.value; if (F.price && this.value) { F.ltv = Math.round(parseFloat(this.value) / parseFloat(F.price) * 10000) / 100; } render(); } }; }
   
   var co = document.getElementById("comp");
   if (co) { co.onblur = function() { var v = parseFloat(this.value) || 0; if (v !== F.comp) { F.comp = v; render(); } }; }
