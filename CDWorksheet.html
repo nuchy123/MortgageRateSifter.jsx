@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Closing Disclosure Calculator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .loading-spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3498db;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // ============================================================================
+    // DATATREE API CONFIGURATION
+    // ============================================================================
+    const DATATREE_CONFIG = {
+      // TODO: Add your credentials when available
+      apiKey: 'YOUR_API_KEY_HERE',
+      baseUrl: 'https://api.datatree.com',
+      endpoints: {
+        propertySearch: '/property/search',
+        propertyDetail: '/property/detail',
+        taxInfo: '/property/tax'
+      }
+    };
+
+    // ============================================================================
+    // STATE TAX RULES (Transfer Tax, Mortgage Recording Tax)
+    // ============================================================================
+    const STATE_TAX_RULES = {
+      'NY': {
+        transferTaxRate: 0.004, // $4 per $1000
+        mortgageRecordingTax: (loanAmount, county) => {
+          // NY MRT varies by county, basic rate ~1%
+          const baseRate = 0.01;
+          const specialTax = loanAmount > 500000 ? 0.0025 : 0; // Additional for loans > $500k
+          return loanAmount * (baseRate + specialTax);
+        },
+        mansionTaxThreshold: 1000000,
+        mansionTaxRate: 0.01
+      },
+      'NJ': {
+        transferTaxRate: (salePrice) => {
+          // NJ has tiered transfer tax
+          if (salePrice <= 150000) return salePrice * 0.02;
+          if (salePrice <= 350000) return 3000 + (salePrice - 150000) * 0.0325;
+          return 9500 + (salePrice - 350000) * 0.0425;
+        },
+        mortgageRecordingTax: () => 0, // NJ has no mortgage recording tax
+        mansionTaxThreshold: 1000000,
+        mansionTaxRate: 0.01
+      },
+      'FL': {
+        transferTaxRate: 0.007, // Doc stamps $0.70 per $100
+        mortgageRecordingTax: (loanAmount) => loanAmount * 0.0035, // Intangible tax
+        mansionTaxThreshold: null,
+        mansionTaxRate: 0
+      },
+      'CT': {
+        transferTaxRate: (salePrice) => {
+          // CT conveyance tax
+          if (salePrice <= 800000) return salePrice * 0.0075;
+          return salePrice * 0.0125;
+        },
+        mortgageRecordingTax: () => 0,
+        mansionTaxThreshold: 2500000,
+        mansionTaxRate: 0.0225
+      }
+    };
+
+    // ============================================================================
+    // DATATREE API SERVICE
+    // ============================================================================
+    const DatatreeService = {
+      async searchProperty(address) {
+        const { street, city, state, zip } = address;
+        
+        // Check if real API key is configured
+        if (DATATREE_CONFIG.apiKey !== 'YOUR_API_KEY_HERE') {
+          // ACTUAL API CALL
+          try {
+            const response = await fetch(`${DATATREE_CONFIG.baseUrl}${DATATREE_CONFIG.endpoints.propertySearch}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${DATATREE_CONFIG.apiKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ address: street, city, state, zip })
+            });
+            
+            if (!response.ok) throw new Error('Property not found');
+            const data = await response.json();
+            return transformDatatreeResponse(data, state);
+          } catch (error) {
+            console.error('Datatree API Error:', error);
+            throw error;
+          }
+        }
+        
+        // MOCK DATA for testing
+        console.log('Using mock data for:', { street, city, state, zip });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return generateMockPropertyData(address);
+      }
+    };
+
+    // Transform Datatree API response to our format
+    function transformDatatreeResponse(apiData, state) {
+      // TODO: Map actual Datatree response fields when API docs are available
+      // This is a template - adjust based on actual API response structure
+      return {
+        success: true,
+        property: {
+          propertyId: apiData.id || apiData.propertyId,
+          address: {
+            street: apiData.address?.street || apiData.streetAddress,
+            city: apiData.address?.city || apiData.city,
+            state: state,
+            zip: apiData.address?.zip || apiData.zipCode,
+            county: apiData.county || apiData.countyName,
+            formatted: apiData.formattedAddress || `${apiData.streetAddress}, ${apiData.city}, ${state}`
+          },
+          propertyType: apiData.propertyType || apiData.landUse || 'Single Family',
+          yearBuilt: apiData.yearBuilt,
+          squareFeet: apiData.squareFeet || apiData.livingArea,
+          lotSize: apiData.lotSize || apiData.lotAcres,
+          bedrooms: apiData.bedrooms,
+          bathrooms: apiData.bathrooms,
+          assessedValue: apiData.assessedValue || apiData.totalAssessedValue,
+          marketValue: apiData.marketValue || apiData.estimatedValue,
+          taxes: (apiData.taxes || apiData.taxInfo || []).map(tax => ({
+            type: tax.taxType || tax.name || 'Property Tax',
+            annualAmount: parseFloat(tax.amount) || parseFloat(tax.annualAmount) || 0,
+            dueDate: tax.dueDate || '01-01',
+            isPaid: tax.isPaid || tax.status === 'PAID',
+            fiscalYearStart: tax.fiscalYearStart || `${new Date().getFullYear()}-01-01`,
+            fiscalYearEnd: tax.fiscalYearEnd || `${new Date().getFullYear()}-12-31`
+          })),
+          totalAnnualTax: apiData.totalTax || apiData.annualTaxAmount || 0,
+          apn: apiData.apn || apiData.parcelNumber,
+          legalDescription: apiData.legalDescription
+        }
+      };
+    }
+
+    // Mock data generator for testing
+    function generateMockPropertyData(address) {
+      const { state, zip } = address;
+      const currentYear = new Date().getFullYear();
+      
+      const stateTaxStructures = {
+        'NY': [
+          { name: 'County Tax', dueMonth: 4, dueDay: 1, pctOfTotal: 0.30 },
+          { name: 'School Tax', dueMonth: 9, dueDay: 1, pctOfTotal: 0.55, fiscalStart: '07-01', fiscalEnd: '06-30' },
+          { name: 'Village Tax', dueMonth: 6, dueDay: 1, pctOfTotal: 0.15 }
+        ],
+        'NJ': [
+          { name: 'Property Tax Q1', dueMonth: 2, dueDay: 1, pctOfTotal: 0.25 },
+          { name: 'Property Tax Q2', dueMonth: 5, dueDay: 1, pctOfTotal: 0.25 },
+          { name: 'Property Tax Q3', dueMonth: 8, dueDay: 1, pctOfTotal: 0.25 },
+          { name: 'Property Tax Q4', dueMonth: 11, dueDay: 1, pctOfTotal: 0.25 }
+        ],
+        'FL': [
+          { name: 'Property Tax', dueMonth: 11, dueDay: 1, pctOfTotal: 1.0 }
+        ],
+        'CT': [
+          { name: 'Property Tax (1st)', dueMonth: 7, dueDay: 1, pctOfTotal: 0.5 },
+          { name: 'Property Tax (2nd)', dueMonth: 1, dueDay: 1, pctOfTotal: 0.5 }
+        ]
+      };
+
+      const taxStructure = stateTaxStructures[state] || stateTaxStructures['NY'];
+      const assessedValue = Math.round((250000 + Math.random() * 500000) / 1000) * 1000;
+      const taxRate = 0.02 + Math.random() * 0.02;
+      const totalAnnualTax = Math.round(assessedValue * taxRate);
+
+      const taxes = taxStructure.map(t => {
+        const amount = Math.round(totalAnnualTax * t.pctOfTotal);
+        const isPaid = Math.random() > 0.5;
+        const fiscalStart = t.fiscalStart 
+          ? `${currentYear}-${t.fiscalStart}` 
+          : `${currentYear}-01-01`;
+        const fiscalEnd = t.fiscalEnd 
+          ? `${currentYear + 1}-${t.fiscalEnd}` 
+          : `${currentYear}-12-31`;
+
+        return {
+          type: t.name,
+          annualAmount: amount,
+          dueDate: `${String(t.dueMonth).padStart(2, '0')}-${String(t.dueDay).padStart(2, '0')}`,
+          isPaid,
+          fiscalYearStart: fiscalStart,
+          fiscalYearEnd: fiscalEnd
+        };
+      });
+
+      const propertyTypes = ['Single Family Residence', 'Condominium', 'Townhouse', 'Multi-Family (2-4)', 'PUD'];
+      const counties = {
+        'NY': { '10950': 'Rockland', '10952': 'Rockland', '10901': 'Rockland', '10701': 'Westchester', 'default': 'Rockland' },
+        'NJ': { '07001': 'Middlesex', '07102': 'Essex', 'default': 'Bergen' },
+        'FL': { '33101': 'Miami-Dade', '32801': 'Orange', 'default': 'Broward' },
+        'CT': { '06001': 'Hartford', '06501': 'New Haven', 'default': 'Fairfield' }
+      };
+
+      const stateCounties = counties[state] || counties['NY'];
+      const county = stateCounties[zip] || stateCounties['default'];
+
+      return {
+        success: true,
+        property: {
+          propertyId: `DT-${Date.now()}`,
+          address: {
+            street: address.street,
+            city: address.city,
+            state: address.state,
+            zip: address.zip,
+            county: county,
+            formatted: `${address.street}, ${address.city}, ${state} ${zip}`
+          },
+          propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
+          yearBuilt: 1970 + Math.floor(Math.random() * 50),
+          squareFeet: 1200 + Math.floor(Math.random() * 2000),
+          lotSize: (0.1 + Math.random() * 0.9).toFixed(2),
+          bedrooms: 2 + Math.floor(Math.random() * 4),
+          bathrooms: 1 + Math.floor(Math.random() * 3),
+          assessedValue,
+          marketValue: Math.round(assessedValue * (1 + Math.random() * 0.3)),
+          taxes,
+          totalAnnualTax,
+          taxYear: currentYear,
+          apn: `${Math.floor(Math.random() * 999)}-${Math.floor(Math.random() * 999)}-${Math.floor(Math.random() * 99)}`
+        }
+      };
+    }
+
+    // ============================================================================
+    // PRORATION CALCULATOR
+    // ============================================================================
+    function calculateProrations(taxes, closingDate) {
+      if (!closingDate || !taxes || taxes.length === 0) return [];
+      
+      const closing = new Date(closingDate);
+      const prorations = [];
+      
+      taxes.forEach(tax => {
+        const fiscalStart = new Date(tax.fiscalYearStart);
+        const fiscalEnd = new Date(tax.fiscalYearEnd);
+        const totalDays = Math.ceil((fiscalEnd - fiscalStart) / (1000 * 60 * 60 * 24)) + 1;
+        const dailyRate = tax.annualAmount / totalDays;
+        
+        let daysSellerOwned = 0;
+        if (closing >= fiscalStart && closing <= fiscalEnd) {
+          daysSellerOwned = Math.ceil((closing - fiscalStart) / (1000 * 60 * 60 * 24));
+        } else if (closing > fiscalEnd) {
+          daysSellerOwned = totalDays;
+        }
+        
+        const daysBuyerOwns = totalDays - daysSellerOwned;
+        const sellerPortion = daysSellerOwned * dailyRate;
+        const buyerPortion = daysBuyerOwns * dailyRate;
+        
+        let creditAmount = 0;
+        let creditTo = '';
+        let explanation = '';
+        
+        if (tax.isPaid) {
+          creditAmount = buyerPortion;
+          creditTo = 'seller';
+          explanation = `${tax.type} PAID. Buyer owes seller for ${daysBuyerOwns} days.`;
+        } else {
+          creditAmount = sellerPortion;
+          creditTo = 'buyer';
+          explanation = `${tax.type} UNPAID. Seller credits buyer for ${daysSellerOwned} days.`;
+        }
+        
+        prorations.push({
+          type: tax.type,
+          annualAmount: tax.annualAmount,
+          dailyRate,
+          totalDays,
+          daysSellerOwned,
+          daysBuyerOwns,
+          sellerPortion,
+          buyerPortion,
+          isPaid: tax.isPaid,
+          creditAmount: Math.round(creditAmount * 100) / 100,
+          creditTo,
+          explanation
+        });
+      });
+      
+      return prorations;
+    }
+
+    // ============================================================================
+    // RATE CALCULATOR INTEGRATION
+    // ============================================================================
+    function findOptimalRate(loanAmount, compPercent) {
+      // Check if RATEDATA exists (from Rate Sifter)
+      if (typeof window.RATEDATA === 'undefined' || !window.RATEDATA.products) {
+        return null;
+      }
+      
+      const rates = window.RATEDATA.products.filter(p => 
+        p.cat === 'conv' && p.t === '30Y' && p.eligible !== false
+      );
+      
+      if (rates.length === 0) return null;
+      
+      const ratesWithCost = rates.map(rate => {
+        const netPrice = rate.final - compPercent;
+        const costToBorrower = (100 - netPrice) * loanAmount / 100;
+        return {
+          ...rate,
+          netPrice,
+          costToBorrower,
+          distanceFromPar: Math.abs(netPrice - 100)
+        };
+      });
+      
+      ratesWithCost.sort((a, b) => a.distanceFromPar - b.distanceFromPar);
+      return ratesWithCost[0];
+    }
+
+    // ============================================================================
+    // MAIN COMPONENT
+    // ============================================================================
+    const IntegratedCDWorksheet = () => {
+      // Borrower Info
+      const [borrowerName, setBorrowerName] = useState('');
+      const [coBorrowerName, setCoBorrowerName] = useState('');
+      
+      // Property Address
+      const [propertyAddress, setPropertyAddress] = useState({
+        street: '',
+        city: '',
+        state: 'NY',
+        zip: ''
+      });
+      
+      // Property Data from API
+      const [propertyData, setPropertyData] = useState(null);
+      const [isLoading, setIsLoading] = useState(false);
+      const [apiError, setApiError] = useState(null);
+      
+      // Loan Terms
+      const [loanAmount, setLoanAmount] = useState(320000);
+      const [interestRate, setInterestRate] = useState(6.125);
+      const [term, setTerm] = useState(30);
+      const [salePrice, setSalePrice] = useState(400000);
+      const [closingDate, setClosingDate] = useState('');
+      const [compPercent, setCompPercent] = useState(2.5);
+      
+      // Rate Calculator
+      const [selectedRate, setSelectedRate] = useState(null);
+      const [autoSelectRate, setAutoSelectRate] = useState(true);
+      const [rateCalcConnected, setRateCalcConnected] = useState(false);
+      
+      // Escrow Items
+      const [escrowItems, setEscrowItems] = useState([
+        { name: "Homeowner's Insurance", annualAmount: 1402, dueDate1: '01-15', enabled: true, source: 'manual' },
+      ]);
+      const [cushionMonths, setCushionMonths] = useState(2);
+      const [monthlyHOA, setMonthlyHOA] = useState(0);
+      
+      // Prorations
+      const [prorations, setProrations] = useState([]);
+      
+      // Closing Costs
+      const [originationCharges, setOriginationCharges] = useState([
+        { name: 'Discount Points', amount: 0, paidBy: 'borrower' },
+        { name: 'Administration Fee', amount: 865, paidBy: 'borrower' },
+      ]);
+      const [servicesNotShopped, setServicesNotShopped] = useState([
+        { name: 'Appraisal', amount: 690, paidBy: 'poc' },
+        { name: 'Credit Report', amount: 219, paidBy: 'borrower' },
+        { name: 'Closing Attorney', amount: 1250, paidBy: 'borrower' },
+      ]);
+      const [servicesShowped, setServicesShowped] = useState([
+        { name: 'Document Prep', amount: 125, paidBy: 'borrower' },
+        { name: 'Endorsements', amount: 398, paidBy: 'borrower' },
+        { name: "Lender's Policy", amount: 415, paidBy: 'borrower' },
+        { name: 'Searches', amount: 620, paidBy: 'borrower' },
+        { name: 'Recording Service', amount: 50, paidBy: 'borrower' },
+      ]);
+      const [taxesGovFees, setTaxesGovFees] = useState([
+        { name: 'Recording Fees', amount: 235, paidBy: 'borrower' },
+        { name: 'Mortgage Recording Tax', amount: 0, paidBy: 'borrower' },
+        { name: 'Transfer Tax', amount: 0, paidBy: 'seller' },
+        { name: 'RP-5217', amount: 125, paidBy: 'borrower' },
+      ]);
+      const [otherCosts, setOtherCosts] = useState([
+        { name: "Owner's Title Insurance", amount: 1977, paidBy: 'borrower' },
+      ]);
+
+      // Prepaids
+      const [prepaidInsuranceMonths, setPrepaidInsuranceMonths] = useState(12);
+      
+      // Cash to Close
+      const [deposit, setDeposit] = useState(0);
+      const [lenderCredits, setLenderCredits] = useState(0);
+      const [sellerCredits, setSellerCredits] = useState(0);
+      const [closingCostsPaidBefore, setClosingCostsPaidBefore] = useState(0);
+      const [grants, setGrants] = useState([]);
+
+      // ============================================================================
+      // FETCH PROPERTY DATA
+      // ============================================================================
+      const fetchPropertyData = async () => {
+        if (!propertyAddress.street || !propertyAddress.city || !propertyAddress.zip) {
+          setApiError('Please enter complete address');
+          return;
+        }
+        
+        setIsLoading(true);
+        setApiError(null);
+        
+        try {
+          const result = await DatatreeService.searchProperty(propertyAddress);
+          
+          if (result.success && result.property) {
+            setPropertyData(result.property);
+            
+            // Update escrow items from tax data
+            const taxEscrowItems = result.property.taxes.map(tax => ({
+              name: tax.type,
+              annualAmount: tax.annualAmount,
+              dueDate1: tax.dueDate,
+              enabled: true,
+              source: 'datatree',
+              isPaid: tax.isPaid,
+              fiscalYearStart: tax.fiscalYearStart,
+              fiscalYearEnd: tax.fiscalYearEnd
+            }));
+            
+            setEscrowItems(prev => {
+              const manualItems = prev.filter(item => item.source === 'manual');
+              return [...manualItems, ...taxEscrowItems];
+            });
+            
+            // Update state taxes
+            updateStateTaxes(propertyAddress.state);
+            
+            // Calculate prorations if closing date set
+            if (closingDate) {
+              setProrations(calculateProrations(result.property.taxes, closingDate));
+            }
+          }
+        } catch (error) {
+          setApiError(error.message || 'Failed to fetch property data');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      // Update state-specific taxes
+      const updateStateTaxes = (state) => {
+        const rules = STATE_TAX_RULES[state];
+        if (!rules) return;
+        
+        setTaxesGovFees(prev => {
+          const updated = [...prev];
+          
+          // Mortgage Recording Tax
+          const mrtIndex = updated.findIndex(t => t.name.toLowerCase().includes('mortgage recording'));
+          if (mrtIndex >= 0) {
+            const mrt = typeof rules.mortgageRecordingTax === 'function' 
+              ? rules.mortgageRecordingTax(loanAmount, propertyData?.address?.county)
+              : loanAmount * rules.mortgageRecordingTax;
+            updated[mrtIndex].amount = Math.round(mrt);
+          }
+          
+          // Transfer Tax
+          const ttIndex = updated.findIndex(t => t.name.toLowerCase().includes('transfer'));
+          if (ttIndex >= 0) {
+            const tt = typeof rules.transferTaxRate === 'function'
+              ? rules.transferTaxRate(salePrice)
+              : salePrice * rules.transferTaxRate;
+            updated[ttIndex].amount = Math.round(tt);
+          }
+          
+          return updated;
+        });
+      };
+      
+      // Recalculate prorations when closing date changes
+      useEffect(() => {
+        if (propertyData?.taxes && closingDate) {
+          setProrations(calculateProrations(propertyData.taxes, closingDate));
+        }
+      }, [closingDate, propertyData]);
+      
+      // Update state taxes when loan amount or sale price changes
+      useEffect(() => {
+        if (propertyAddress.state) {
+          updateStateTaxes(propertyAddress.state);
+        }
+      }, [loanAmount, salePrice, propertyAddress.state]);
+      
+      // Check for Rate Calculator connection
+      useEffect(() => {
+        const checkRateCalc = () => {
+          const connected = typeof window.RATEDATA !== 'undefined' && window.RATEDATA.products;
+          setRateCalcConnected(connected);
+          
+          if (connected && autoSelectRate) {
+            const optimal = findOptimalRate(loanAmount, compPercent);
+            if (optimal) {
+              setSelectedRate(optimal);
+              setInterestRate(optimal.r);
+              
+              // Update origination charges
+              const netPrice = optimal.final - compPercent;
+              const pointsOrCredits = (100 - netPrice) * loanAmount / 100;
+              
+              setOriginationCharges(prev => {
+                const updated = [...prev];
+                const idx = updated.findIndex(c => c.name.toLowerCase().includes('point') || c.name.toLowerCase().includes('discount'));
+                if (idx >= 0) {
+                  if (pointsOrCredits > 0) {
+                    updated[idx] = { name: `Discount Points (${optimal.r}%)`, amount: Math.round(pointsOrCredits), paidBy: 'borrower' };
+                    setLenderCredits(0);
+                  } else {
+                    updated[idx] = { name: 'Discount Points', amount: 0, paidBy: 'borrower' };
+                    setLenderCredits(Math.abs(Math.round(pointsOrCredits)));
+                  }
+                }
+                return updated;
+              });
+            }
+          }
+        };
+        
+        checkRateCalc();
+        const interval = setInterval(checkRateCalc, 2000);
+        return () => clearInterval(interval);
+      }, [loanAmount, compPercent, autoSelectRate]);
+
+      // ============================================================================
+      // CALCULATIONS
+      // ============================================================================
+      
+      const monthlyPI = useMemo(() => {
+        const r = interestRate / 100 / 12;
+        const n = term * 12;
+        if (r === 0) return loanAmount / n;
+        return loanAmount * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+      }, [loanAmount, interestRate, term]);
+
+      const prepaidInterestCalc = useMemo(() => {
+        if (!closingDate) return { days: 0, amount: 0 };
+        const closing = new Date(closingDate);
+        const lastDay = new Date(closing.getFullYear(), closing.getMonth() + 1, 0);
+        const days = lastDay.getDate() - closing.getDate();
+        const daily = (loanAmount * (interestRate / 100)) / 365;
+        return { days, amount: days * daily };
+      }, [closingDate, loanAmount, interestRate]);
+
+      const escrowAnalysis = useMemo(() => {
+        if (!closingDate) return null;
+        
+        const closing = new Date(closingDate);
+        const closingMonth = closing.getMonth();
+        const activeItems = escrowItems.filter(item => item.enabled && item.annualAmount > 0);
+        const monthlyEscrow = activeItems.reduce((sum, item) => sum + (item.annualAmount / 12), 0);
+        
+        const initialDeposits = activeItems.map(item => {
+          const dueMonth = parseInt(item.dueDate1.split('-')[0]) - 1;
+          const monthly = item.annualAmount / 12;
+          let monthsUntilDue = dueMonth - closingMonth;
+          if (monthsUntilDue <= 0) monthsUntilDue += 12;
+          
+          const needed = item.annualAmount;
+          const willCollect = monthsUntilDue * monthly;
+          let initialMonths = Math.ceil((needed - willCollect) / monthly);
+          initialMonths = Math.max(initialMonths, 2);
+          
+          return { name: item.name, annualAmount: item.annualAmount, monthly, initialMonths, initialDeposit: initialMonths * monthly };
+        });
+        
+        const totalInitialDeposit = initialDeposits.reduce((sum, item) => sum + item.initialDeposit, 0);
+        
+        return { activeItems, monthlyEscrow, initialDeposits, totalInitialDeposit, adjustedInitialDeposit: totalInitialDeposit };
+      }, [escrowItems, closingDate]);
+
+      const monthlyPaymentBreakdown = useMemo(() => {
+        const activeItems = escrowItems.filter(item => item.enabled && item.annualAmount > 0);
+        const insuranceItem = activeItems.find(e => e.name.toLowerCase().includes('insurance') && !e.name.toLowerCase().includes('mortgage'));
+        const taxItems = activeItems.filter(e => e.name.toLowerCase().includes('tax') || e.name.toLowerCase().includes('county') || e.name.toLowerCase().includes('school') || e.name.toLowerCase().includes('village') || e.name.toLowerCase().includes('property'));
+        
+        const monthlyTaxes = taxItems.reduce((sum, item) => sum + (item.annualAmount / 12), 0);
+        const monthlyInsurance = insuranceItem ? insuranceItem.annualAmount / 12 : 0;
+        
+        return {
+          principal: monthlyPI,
+          taxes: monthlyTaxes,
+          insurance: monthlyInsurance,
+          hoa: monthlyHOA,
+          totalPITI: monthlyPI + monthlyTaxes + monthlyInsurance + monthlyHOA
+        };
+      }, [monthlyPI, escrowItems, monthlyHOA]);
+
+      const sumByPaidBy = (items, type) => items.reduce((sum, item) => item.paidBy === type ? sum + (parseFloat(item.amount) || 0) : sum, 0);
+
+      const totals = useMemo(() => {
+        const calcSection = (items) => ({
+          borrower: sumByPaidBy(items, 'borrower'),
+          seller: sumByPaidBy(items, 'seller'),
+          poc: sumByPaidBy(items, 'poc'),
+        });
+
+        const origination = calcSection(originationCharges);
+        const notShopped = calcSection(servicesNotShopped);
+        const shopped = calcSection(servicesShowped);
+        const taxes = calcSection(taxesGovFees);
+        
+        const insuranceItem = escrowItems.find(e => e.name.toLowerCase().includes('insurance') && !e.name.toLowerCase().includes('mortgage'));
+        const prepaidInsurance = insuranceItem ? (insuranceItem.annualAmount / 12) * prepaidInsuranceMonths : 0;
+        const prepaidInterest = prepaidInterestCalc.amount;
+        
+        const prepaidTotal = { borrower: prepaidInsurance + prepaidInterest, seller: 0, poc: 0 };
+        const escrowTotal = { borrower: escrowAnalysis?.adjustedInitialDeposit || 0, seller: 0, poc: 0 };
+        const other = calcSection(otherCosts);
+
+        const loanCostsBorrower = origination.borrower + notShopped.borrower + shopped.borrower;
+        const loanCostsPOC = origination.poc + notShopped.poc + shopped.poc;
+        const otherCostsBorrower = taxes.borrower + prepaidTotal.borrower + escrowTotal.borrower + other.borrower;
+        const otherCostsSeller = taxes.seller + other.seller;
+        const totalClosingCostsBorrower = loanCostsBorrower + otherCostsBorrower;
+
+        const prorationCreditsToBuyer = prorations.filter(p => p.creditTo === 'buyer').reduce((sum, p) => sum + p.creditAmount, 0);
+        const prorationCreditsToSeller = prorations.filter(p => p.creditTo === 'seller').reduce((sum, p) => sum + p.creditAmount, 0);
+        const netProrationCredit = prorationCreditsToBuyer - prorationCreditsToSeller;
+
+        const totalGrants = grants.reduce((sum, g) => sum + (parseFloat(g.amount) || 0), 0);
+        const downPayment = salePrice - loanAmount;
+
+        const cashToClose = totalClosingCostsBorrower + downPayment - deposit - lenderCredits - sellerCredits - closingCostsPaidBefore - netProrationCredit - totalGrants;
+
+        return {
+          origination, notShopped, shopped, taxes, prepaid: prepaidTotal, escrow: escrowTotal, other,
+          loanCostsBorrower, loanCostsPOC, otherCostsBorrower, otherCostsSeller,
+          totalClosingCostsBorrower,
+          prorationCreditsToBuyer, prorationCreditsToSeller, netProrationCredit,
+          totalGrants, downPayment, cashToClose,
+          prepaidInsurance, prepaidInterest
+        };
+      }, [originationCharges, servicesNotShopped, servicesShowped, taxesGovFees, otherCosts, grants, prorations, salePrice, loanAmount, deposit, lenderCredits, sellerCredits, closingCostsPaidBefore, escrowItems, prepaidInsuranceMonths, prepaidInterestCalc, escrowAnalysis]);
+
+      const formatCurrency = (num) => (parseFloat(num) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+      // ============================================================================
+      // RENDER HELPERS
+      // ============================================================================
+      
+      const FeeRow = ({ item, index, items, setItems }) => (
+        <div className="grid grid-cols-12 gap-2 items-center py-1 border-b border-gray-100">
+          <input type="text" value={item.name} onChange={(e) => { const u = [...items]; u[index].name = e.target.value; setItems(u); }}
+            className="col-span-5 px-2 py-1 border border-gray-200 rounded text-sm" />
+          <input type="number" step="0.01" value={item.amount} onChange={(e) => { const u = [...items]; u[index].amount = parseFloat(e.target.value) || 0; setItems(u); }}
+            className="col-span-3 px-2 py-1 border border-gray-200 rounded text-sm text-right" />
+          <select value={item.paidBy} onChange={(e) => { const u = [...items]; u[index].paidBy = e.target.value; setItems(u); }}
+            className="col-span-3 px-2 py-1 border border-gray-200 rounded text-sm">
+            <option value="borrower">Borrower</option>
+            <option value="seller">Seller</option>
+            <option value="poc">POC</option>
+          </select>
+          <button onClick={() => setItems(items.filter((_, i) => i !== index))} className="col-span-1 text-red-500 hover:text-red-700 text-lg font-bold">×</button>
+        </div>
+      );
+
+      const FeeSection = ({ title, letter, items, setItems, totals }) => (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
+          <div className="bg-blue-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+            <span className="font-semibold text-blue-900">{letter}. {title}</span>
+            <span className="text-sm font-medium text-blue-700">Borrower: {formatCurrency(totals.borrower)}</span>
+          </div>
+          <div className="p-3">
+            <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium mb-2">
+              <span className="col-span-5">Description</span>
+              <span className="col-span-3 text-right">Amount</span>
+              <span className="col-span-3">Paid By</span>
+              <span className="col-span-1"></span>
+            </div>
+            {items.map((item, index) => <FeeRow key={index} item={item} index={index} items={items} setItems={setItems} />)}
+            <button onClick={() => setItems([...items, { name: '', amount: 0, paidBy: 'borrower' }])} className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">+ Add Fee</button>
+          </div>
+        </div>
+      );
+
+      // ============================================================================
+      // MAIN RENDER
+      // ============================================================================
+      return (
+        <div className="min-h-screen bg-gray-50 p-4">
+          <div className="max-w-7xl mx-auto">
+            <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+              Closing Disclosure Calculator
+              <span className="text-sm font-normal text-gray-500 ml-2">with Datatree Integration</span>
+            </h1>
+            
+            {/* BORROWER & PROPERTY */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 p-4">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Borrower & Property</h2>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-3">Borrower</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Borrower Name</label>
+                      <input type="text" value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} placeholder="John Smith" className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Co-Borrower (Optional)</label>
+                      <input type="text" value={coBorrowerName} onChange={(e) => setCoBorrowerName(e.target.value)} placeholder="Jane Smith" className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-3">Property Address</h3>
+                  <div className="space-y-3">
+                    <input type="text" value={propertyAddress.street} onChange={(e) => setPropertyAddress({...propertyAddress, street: e.target.value})} placeholder="123 Main Street" className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    <div className="grid grid-cols-3 gap-3">
+                      <input type="text" value={propertyAddress.city} onChange={(e) => setPropertyAddress({...propertyAddress, city: e.target.value})} placeholder="City" className="px-3 py-2 border border-gray-300 rounded-md" />
+                      <select value={propertyAddress.state} onChange={(e) => setPropertyAddress({...propertyAddress, state: e.target.value})} className="px-3 py-2 border border-gray-300 rounded-md">
+                        <option value="NY">NY</option>
+                        <option value="NJ">NJ</option>
+                        <option value="FL">FL</option>
+                        <option value="CT">CT</option>
+                      </select>
+                      <input type="text" value={propertyAddress.zip} onChange={(e) => setPropertyAddress({...propertyAddress, zip: e.target.value})} placeholder="ZIP" className="px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <button onClick={fetchPropertyData} disabled={isLoading} className={`w-full py-3 px-4 rounded-md font-semibold text-white ${isLoading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>
+                      {isLoading ? <span><span className="loading-spinner"></span>Fetching...</span> : '🔍 Fetch Property Data'}
+                    </button>
+                    {apiError && <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">{apiError}</div>}
+                  </div>
+                </div>
+              </div>
+              
+              {propertyData && (
+                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <h3 className="font-semibold text-green-800 mb-3">✓ Property Data Retrieved</h3>
+                  <div className="grid md:grid-cols-4 gap-4 text-sm">
+                    <div><span className="text-gray-600">Type:</span> <div className="font-semibold">{propertyData.propertyType}</div></div>
+                    <div><span className="text-gray-600">County:</span> <div className="font-semibold">{propertyData.address.county}</div></div>
+                    <div><span className="text-gray-600">Assessed:</span> <div className="font-semibold">{formatCurrency(propertyData.assessedValue)}</div></div>
+                    <div><span className="text-gray-600">Annual Tax:</span> <div className="font-semibold">{formatCurrency(propertyData.totalAnnualTax)}</div></div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-green-200">
+                    <h4 className="font-medium text-green-800 mb-2">Tax Bills</h4>
+                    <div className="grid md:grid-cols-3 gap-3">
+                      {propertyData.taxes.map((tax, idx) => (
+                        <div key={idx} className="bg-white p-3 rounded border border-green-100">
+                          <div className="font-medium">{tax.type}</div>
+                          <div className="text-lg font-bold text-green-700">{formatCurrency(tax.annualAmount)}</div>
+                          <div className="text-xs text-gray-500">Due: {tax.dueDate} | <span className={tax.isPaid ? 'text-green-600' : 'text-red-600'}>{tax.isPaid ? '✓ PAID' : '✗ UNPAID'}</span></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* LOAN TERMS */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 p-4">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Loan Terms</h2>
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Sale Price</label>
+                  <input type="number" value={salePrice} onChange={(e) => setSalePrice(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Loan Amount</label>
+                  <input type="number" value={loanAmount} onChange={(e) => setLoanAmount(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Rate (%)</label>
+                  <input type="number" step="0.125" value={interestRate} onChange={(e) => setInterestRate(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Term</label>
+                  <select value={term} onChange={(e) => setTerm(parseInt(e.target.value))} className="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    <option value={30}>30 yr</option>
+                    <option value={20}>20 yr</option>
+                    <option value={15}>15 yr</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Closing Date</label>
+                  <input type="date" value={closingDate} onChange={(e) => setClosingDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Comp %</label>
+                  <input type="number" step="0.125" value={compPercent} onChange={(e) => setCompPercent(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+              </div>
+              
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="font-medium text-blue-800">Rate Calculator: </span>
+                  <span className={rateCalcConnected ? 'text-green-600' : 'text-gray-500'}>{rateCalcConnected ? '✓ Connected' : '⚠️ Not Connected'}</span>
+                  {selectedRate && <span className="ml-2 text-blue-700">| Selected: <strong>{selectedRate.r}%</strong> @ {selectedRate.final?.toFixed(3)}</span>}
+                </div>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={autoSelectRate} onChange={(e) => setAutoSelectRate(e.target.checked)} className="w-4 h-4" />
+                  <span className="text-sm text-blue-700">Auto-select best rate</span>
+                </label>
+              </div>
+              
+              <div className="mt-4 grid grid-cols-4 gap-4 bg-gray-50 p-3 rounded text-sm">
+                <div><span className="text-gray-500">Down:</span> <span className="font-semibold">{formatCurrency(totals.downPayment)}</span></div>
+                <div><span className="text-gray-500">LTV:</span> <span className="font-semibold">{((loanAmount / salePrice) * 100).toFixed(1)}%</span></div>
+                <div><span className="text-gray-500">P&I:</span> <span className="font-semibold">{formatCurrency(monthlyPI)}</span></div>
+                <div><span className="text-gray-500">Escrow:</span> <span className="font-semibold">{formatCurrency(escrowAnalysis?.monthlyEscrow || 0)}</span></div>
+              </div>
+            </div>
+
+            {/* PITI */}
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg shadow-lg mb-6 p-5 text-white">
+              <div className="flex justify-between items-center">
+                <div><h2 className="text-lg font-bold">Total Monthly Payment</h2><p className="text-emerald-100 text-sm">PITI + HOA</p></div>
+                <div className="text-4xl font-bold">{formatCurrency(monthlyPaymentBreakdown.totalPITI)}</div>
+              </div>
+              <div className="mt-4 grid grid-cols-5 gap-3">
+                <div className="bg-white/15 rounded-lg p-3"><div className="text-xs uppercase text-emerald-100">P&I</div><div className="text-xl font-bold">{formatCurrency(monthlyPaymentBreakdown.principal)}</div></div>
+                <div className="bg-white/15 rounded-lg p-3"><div className="text-xs uppercase text-emerald-100">Taxes</div><div className="text-xl font-bold">{formatCurrency(monthlyPaymentBreakdown.taxes)}</div></div>
+                <div className="bg-white/15 rounded-lg p-3"><div className="text-xs uppercase text-emerald-100">Insurance</div><div className="text-xl font-bold">{formatCurrency(monthlyPaymentBreakdown.insurance)}</div></div>
+                <div className="bg-white/15 rounded-lg p-3"><div className="text-xs uppercase text-emerald-100">HOA</div><div className="text-xl font-bold">{formatCurrency(monthlyPaymentBreakdown.hoa)}</div></div>
+                <div className="bg-white/10 rounded-lg p-3"><label className="text-xs uppercase text-emerald-100">Set HOA</label><input type="number" value={monthlyHOA} onChange={(e) => setMonthlyHOA(parseFloat(e.target.value) || 0)} className="w-full mt-1 px-2 py-1 rounded bg-white/20 text-white text-sm border border-white/30" /></div>
+              </div>
+            </div>
+
+            {/* PRORATIONS */}
+            {prorations.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-amber-200 mb-6 p-4">
+                <h2 className="text-lg font-semibold text-amber-800 mb-4 border-b border-amber-200 pb-2">Tax Prorations</h2>
+                <div className="space-y-3">
+                  {prorations.map((p, idx) => (
+                    <div key={idx} className={`p-4 rounded-lg border ${p.creditTo === 'buyer' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                      <div className="flex justify-between">
+                        <div>
+                          <h3 className="font-semibold">{p.type}</h3>
+                          <p className="text-sm text-gray-600">{p.explanation}</p>
+                          <div className="text-xs text-gray-500 mt-1">Daily: {formatCurrency(p.dailyRate)} | Seller: {p.daysSellerOwned} days | Buyer: {p.daysBuyerOwns} days</div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-lg font-bold ${p.creditTo === 'buyer' ? 'text-green-700' : 'text-blue-700'}`}>{formatCurrency(p.creditAmount)}</div>
+                          <div className="text-sm">Credit to {p.creditTo.toUpperCase()}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="mt-4 p-4 bg-gray-100 rounded-lg grid grid-cols-3 gap-4 text-center">
+                    <div><div className="text-sm text-gray-600">Credits to Buyer</div><div className="text-xl font-bold text-green-600">{formatCurrency(totals.prorationCreditsToBuyer)}</div></div>
+                    <div><div className="text-sm text-gray-600">Credits to Seller</div><div className="text-xl font-bold text-blue-600">{formatCurrency(totals.prorationCreditsToSeller)}</div></div>
+                    <div><div className="text-sm text-gray-600">Net to Buyer</div><div className={`text-xl font-bold ${totals.netProrationCredit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(totals.netProrationCredit)}</div></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ESCROW */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 p-4">
+              <div className="flex justify-between items-center mb-4 border-b pb-2">
+                <h2 className="text-lg font-semibold text-gray-800">Escrow Items</h2>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Cushion:</label>
+                  <input type="number" min="0" max="2" value={cushionMonths} onChange={(e) => setCushionMonths(parseInt(e.target.value) || 0)} className="w-16 px-2 py-1 border border-gray-300 rounded text-center" />
+                </div>
+              </div>
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left">✓</th><th className="px-3 py-2 text-left">Item</th><th className="px-3 py-2 text-right">Annual</th><th className="px-3 py-2 text-right">Monthly</th><th className="px-3 py-2 text-center">Due</th><th className="px-3 py-2 text-center">Source</th></tr></thead>
+                <tbody>
+                  {escrowItems.map((item, index) => (
+                    <tr key={index} className={`border-b ${!item.enabled ? 'opacity-50' : ''}`}>
+                      <td className="px-3 py-2"><input type="checkbox" checked={item.enabled} onChange={(e) => { const u = [...escrowItems]; u[index].enabled = e.target.checked; setEscrowItems(u); }} className="w-4 h-4" /></td>
+                      <td className="px-3 py-2"><input type="text" value={item.name} onChange={(e) => { const u = [...escrowItems]; u[index].name = e.target.value; setEscrowItems(u); }} className="w-full px-2 py-1 border border-gray-200 rounded" /></td>
+                      <td className="px-3 py-2"><input type="number" value={item.annualAmount} onChange={(e) => { const u = [...escrowItems]; u[index].annualAmount = parseFloat(e.target.value) || 0; setEscrowItems(u); }} className="w-full px-2 py-1 border border-gray-200 rounded text-right" /></td>
+                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.annualAmount / 12)}</td>
+                      <td className="px-3 py-2"><input type="text" value={item.dueDate1} onChange={(e) => { const u = [...escrowItems]; u[index].dueDate1 = e.target.value; setEscrowItems(u); }} className="w-full px-2 py-1 border border-gray-200 rounded text-center" placeholder="MM-DD" /></td>
+                      <td className="px-3 py-2 text-center"><span className={`px-2 py-1 rounded text-xs ${item.source === 'datatree' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{item.source === 'datatree' ? 'API' : 'Manual'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button onClick={() => setEscrowItems([...escrowItems, { name: '', annualAmount: 0, dueDate1: '01-01', enabled: true, source: 'manual' }])} className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium">+ Add Item</button>
+              {escrowAnalysis && (
+                <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200 flex justify-between">
+                  <div><span className="text-amber-700">Monthly Escrow:</span> <strong>{formatCurrency(escrowAnalysis.monthlyEscrow)}</strong></div>
+                  <div><span className="text-amber-700">Initial Escrow (G):</span> <strong>{formatCurrency(escrowAnalysis.adjustedInitialDeposit)}</strong></div>
+                </div>
+              )}
+            </div>
+
+            {/* CLOSING COSTS */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800 mb-3">Loan Costs</h2>
+                <FeeSection title="Origination Charges" letter="A" items={originationCharges} setItems={setOriginationCharges} totals={totals.origination} />
+                <FeeSection title="Services Not Shopped" letter="B" items={servicesNotShopped} setItems={setServicesNotShopped} totals={totals.notShopped} />
+                <FeeSection title="Services Shopped" letter="C" items={servicesShowped} setItems={setServicesShowped} totals={totals.shopped} />
+                <div className="bg-blue-100 rounded-lg p-3"><div className="flex justify-between font-semibold text-blue-900"><span>D. Total Loan Costs</span><span>{formatCurrency(totals.loanCostsBorrower)}</span></div></div>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800 mb-3">Other Costs</h2>
+                <FeeSection title="Taxes & Gov Fees" letter="E" items={taxesGovFees} setItems={setTaxesGovFees} totals={totals.taxes} />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
+                  <div className="bg-blue-50 px-4 py-2 border-b border-gray-200 flex justify-between"><span className="font-semibold text-blue-900">F. Prepaids</span><span className="text-sm font-medium text-blue-700">{formatCurrency(totals.prepaid.borrower)}</span></div>
+                  <div className="p-3 space-y-2">
+                    <div className="flex justify-between py-1 border-b border-gray-100 text-sm"><span>Insurance ({prepaidInsuranceMonths} mo)</span><span className="font-medium">{formatCurrency(totals.prepaidInsurance)}</span></div>
+                    <div className="flex justify-between py-1 text-sm"><span>Prepaid Interest ({prepaidInterestCalc.days} days)</span><span className="font-medium">{formatCurrency(totals.prepaidInterest)}</span></div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
+                  <div className="bg-amber-50 px-4 py-2 border-b border-gray-200 flex justify-between"><span className="font-semibold text-amber-900">G. Initial Escrow</span><span className="text-sm font-medium text-amber-700">{formatCurrency(escrowAnalysis?.adjustedInitialDeposit || 0)}</span></div>
+                </div>
+                <FeeSection title="Other" letter="H" items={otherCosts} setItems={setOtherCosts} totals={totals.other} />
+                <div className="bg-green-100 rounded-lg p-3"><div className="flex justify-between font-semibold text-green-900"><span>I. Total Other Costs</span><span>{formatCurrency(totals.otherCostsBorrower)}</span></div></div>
+              </div>
+            </div>
+
+            {/* TOTAL */}
+            <div className="bg-purple-100 rounded-lg p-4 my-6">
+              <div className="flex justify-between items-center"><span className="text-lg font-bold text-purple-900">J. Total Closing Costs (D + I)</span><span className="text-xl font-bold text-purple-900">{formatCurrency(totals.totalClosingCostsBorrower)}</span></div>
+            </div>
+
+            {/* CASH TO CLOSE */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Cash to Close</h2>
+              <div className="grid md:grid-cols-3 gap-6">
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-3">Credits</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center"><label className="text-sm">Deposit (EMD)</label><input type="number" value={deposit} onChange={(e) => setDeposit(parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1 border border-gray-300 rounded text-right text-sm" /></div>
+                    <div className="flex justify-between items-center"><label className="text-sm">Lender Credits</label><input type="number" value={lenderCredits} onChange={(e) => setLenderCredits(parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1 border border-gray-300 rounded text-right text-sm" /></div>
+                    <div className="flex justify-between items-center"><label className="text-sm">Seller Credits</label><input type="number" value={sellerCredits} onChange={(e) => setSellerCredits(parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1 border border-gray-300 rounded text-right text-sm" /></div>
+                    <div className="flex justify-between items-center"><label className="text-sm">POC</label><input type="number" value={closingCostsPaidBefore} onChange={(e) => setClosingCostsPaidBefore(parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1 border border-gray-300 rounded text-right text-sm" /></div>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-3">Grants</h3>
+                  {grants.map((g, i) => (
+                    <div key={i} className="flex items-center gap-2 mb-2">
+                      <input type="text" value={g.name} onChange={(e) => { const u = [...grants]; u[i].name = e.target.value; setGrants(u); }} className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" placeholder="Name" />
+                      <input type="number" value={g.amount} onChange={(e) => { const u = [...grants]; u[i].amount = parseFloat(e.target.value) || 0; setGrants(u); }} className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm" />
+                      <button onClick={() => setGrants(grants.filter((_, j) => j !== i))} className="text-red-500 font-bold">×</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setGrants([...grants, { name: '', amount: 0 }])} className="text-sm text-blue-600 font-medium">+ Add Grant</button>
+                  <div className="mt-2 text-sm font-medium">Total: {formatCurrency(totals.totalGrants)}</div>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-3">Summary</h3>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between"><span>Closing Costs:</span><span>{formatCurrency(totals.totalClosingCostsBorrower)}</span></div>
+                    <div className="flex justify-between"><span>Down Payment:</span><span>{formatCurrency(totals.downPayment)}</span></div>
+                    <div className="flex justify-between text-green-600"><span>- All Credits:</span><span>({formatCurrency(deposit + lenderCredits + sellerCredits + closingCostsPaidBefore + totals.netProrationCredit + totals.totalGrants)})</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* FINAL */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 text-white">
+              <div className="text-center">
+                <div className="text-blue-100 text-sm mb-1">Cash to Close</div>
+                <div className="text-5xl font-bold">{formatCurrency(totals.cashToClose)}</div>
+                {borrowerName && <div className="mt-4 text-blue-100">Borrower: <strong className="text-white">{borrowerName}</strong>{coBorrowerName && <span> & <strong className="text-white">{coBorrowerName}</strong></span>}</div>}
+                {propertyData && <div className="text-blue-100">Property: <strong className="text-white">{propertyData.address.formatted}</strong></div>}
+              </div>
+              <div className="mt-6 grid grid-cols-4 gap-4">
+                <div className="bg-white/10 rounded-lg p-4 text-center"><div className="text-blue-100 text-sm">Closing Costs</div><div className="text-2xl font-bold">{formatCurrency(totals.totalClosingCostsBorrower)}</div></div>
+                <div className="bg-white/10 rounded-lg p-4 text-center"><div className="text-blue-100 text-sm">Down Payment</div><div className="text-2xl font-bold">{formatCurrency(totals.downPayment)}</div></div>
+                <div className="bg-white/10 rounded-lg p-4 text-center"><div className="text-blue-100 text-sm">Monthly Payment</div><div className="text-2xl font-bold">{formatCurrency(monthlyPaymentBreakdown.totalPITI)}</div></div>
+                <div className="bg-white/10 rounded-lg p-4 text-center"><div className="text-blue-100 text-sm">Interest Rate</div><div className="text-2xl font-bold">{interestRate}%</div></div>
+              </div>
+            </div>
+
+            {/* STATUS */}
+            <div className="mt-6 text-center text-sm text-gray-500">
+              <p>Datatree API: {DATATREE_CONFIG.apiKey === 'YOUR_API_KEY_HERE' ? '⚠️ Using Mock Data' : '✓ Connected'}</p>
+              <p>Rate Calculator: {rateCalcConnected ? '✓ Connected' : '⚠️ Not Connected'}</p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<IntegratedCDWorksheet />, document.getElementById('root'));
+  </script>
+</body>
+</html>
